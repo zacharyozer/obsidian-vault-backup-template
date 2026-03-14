@@ -1,0 +1,44 @@
+name: Check backup health
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check last commit age
+        run: |
+          LAST_COMMIT=$(git log -1 --format=%ct -- vault/)
+          if [ -z "$LAST_COMMIT" ]; then
+            echo "::error::No vault commits found"
+            exit 1
+          fi
+
+          NOW=$(date +%s)
+          AGE_HOURS=$(( (NOW - LAST_COMMIT) / 3600 ))
+          echo "Last vault commit: $AGE_HOURS hours ago"
+
+          if [ "$AGE_HOURS" -gt 48 ]; then
+            echo "::error::Vault backup is stale ($AGE_HOURS hours old)"
+            exit 1
+          fi
+
+      - name: Check repo size
+        run: |
+          REPO_SIZE=$(gh api repos/${{ github.repository }} --jq '.size')
+          REPO_MB=$(( REPO_SIZE / 1024 ))
+          echo "Repo size: ${REPO_MB}MB (${REPO_SIZE}KB)"
+
+          if [ "$REPO_SIZE" -gt 51200 ]; then
+            echo "::error::Repo size is ${REPO_MB}MB — investigate large files"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

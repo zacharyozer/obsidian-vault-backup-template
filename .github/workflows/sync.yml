@@ -1,0 +1,99 @@
+name: Sync Obsidian Vault
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Cache obsidian-headless
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: obsidian-headless-${{ runner.os }}
+
+      - name: Install tools
+        run: |
+          npm install -g obsidian-headless
+          sudo apt-get update && sudo apt-get install -y git-crypt
+
+      - name: Authenticate
+        run: |
+          if OBSIDIAN_AUTH_TOKEN="${{ secrets.OBSIDIAN_AUTH_TOKEN }}" \
+             ob sync-list-remote > /dev/null 2>&1; then
+            echo "Auth token valid"
+            echo "OBSIDIAN_AUTH_TOKEN=${{ secrets.OBSIDIAN_AUTH_TOKEN }}" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Auth token expired, falling back to password+TOTP"
+            npm install otpauth
+            MFA_CODE=$(node -e "
+              const { TOTP, Secret } = require('otpauth');
+              const totp = new TOTP({
+                secret: Secret.fromBase32('${{ secrets.OBSIDIAN_TOTP_SECRET }}')
+              });
+              console.log(totp.generate());
+            ")
+            ob login \
+              --email "${{ secrets.OBSIDIAN_EMAIL }}" \
+              --password "${{ secrets.OBSIDIAN_PASSWORD }}" \
+              --mfa "$MFA_CODE"
+          fi
+
+      - name: Unlock git-crypt
+        run: |
+          echo "${{ secrets.GIT_CRYPT_KEY }}" | base64 -d > /tmp/git-crypt-key.bin
+          git-crypt unlock /tmp/git-crypt-key.bin
+          rm /tmp/git-crypt-key.bin
+
+      - name: Setup and sync vault
+        id: sync
+        run: |
+          ob sync-setup \
+            --vault "${{ secrets.OBSIDIAN_VAULT_NAME }}" \
+            --path ./vault \
+            --password "${{ secrets.OBSIDIAN_E2E_PASSWORD }}" \
+            --device-name "gh-actions-backup"
+          ob sync-config --path ./vault --mode pull-only
+
+          # ob sync fails if the desktop/mobile app is actively connected.
+          # This is expected — Obsidian Sync allows one connection at a time.
+          # Retry once after 5s, then gracefully skip if still blocked.
+          if ob sync --path ./vault 2>&1; then
+            echo "synced=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Sync blocked (desktop app likely open). Retrying in 5s..."
+            sleep 5
+            if ob sync --path ./vault 2>&1; then
+              echo "synced=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Sync still blocked. Skipping this run."
+              echo "synced=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+        env:
+          OBSIDIAN_AUTH_TOKEN: ${{ env.OBSIDIAN_AUTH_TOKEN }}
+
+      - name: Commit changes
+        if: steps.sync.outputs.synced == 'true'
+        run: |
+          git add vault/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git config user.name "obsidian-backup"
+            git config user.email "obsidian-backup@users.noreply.github.com"
+            git commit -m "vault snapshot $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
