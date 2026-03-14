@@ -59,24 +59,25 @@ in a single call. Ask the user for the 1Password vault name and item name,
 then run:
 
 ```bash
-CREDS=$(op item get "<item-name>" --vault "<vault-name>" --format json)
+TMPFILE=$(mktemp)
+op item get "<item-name>" --vault "<vault-name>" --format json > "$TMPFILE"
 
-OBSIDIAN_EMAIL=$(echo "$CREDS" | python3 -c "import sys,json; item=json.loads(sys.stdin.read(),strict=False); print(next(f['value'] for f in item['fields'] if f.get('purpose')=='USERNAME'))")
-OBSIDIAN_PASSWORD=$(echo "$CREDS" | python3 -c "import sys,json; item=json.loads(sys.stdin.read(),strict=False); print(next(f['value'] for f in item['fields'] if f.get('purpose')=='PASSWORD'))")
-OBSIDIAN_TOTP_SECRET=$(echo "$CREDS" | python3 -c "
-import sys, json, urllib.parse
-item = json.loads(sys.stdin.read(), strict=False)
-val = next(f['value'] for f in item['fields'] if f.get('type') == 'OTP')
-if 'secret=' in val:
-    print(urllib.parse.parse_qs(urllib.parse.urlparse(val).query)['secret'][0])
-else:
-    print(val)
-")
+OBSIDIAN_EMAIL=$(jq -r '.fields[] | select(.purpose == "USERNAME") | .value' "$TMPFILE")
+OBSIDIAN_PASSWORD=$(jq -r '.fields[] | select(.purpose == "PASSWORD") | .value' "$TMPFILE")
+OBSIDIAN_TOTP_SECRET=$(jq -r '.fields[] | select(.type == "OTP") | .value' "$TMPFILE")
+
+rm -f "$TMPFILE"
+
+# Handle otpauth:// URI format (some 1Password setups use it)
+if [[ "$OBSIDIAN_TOTP_SECRET" == otpauth://* ]]; then
+  OBSIDIAN_TOTP_SECRET=$(echo "$OBSIDIAN_TOTP_SECRET" | sed -n 's/.*secret=\([^&]*\).*/\1/p')
+fi
 ```
 
 Notes:
-- Uses `python3` instead of `jq` because 1Password JSON can contain
-  control characters in notes fields that break `jq`.
+- Writes to a temp file because `jq` fails on 1Password JSON piped
+  through shell variables (control characters in notes fields get mangled
+  by shell expansion). Reading from a file avoids this.
 - The TOTP field may contain a raw base32 secret or an `otpauth://` URI.
   The script handles both formats.
 - E2E password is often the same as the account password. Confirm with the
