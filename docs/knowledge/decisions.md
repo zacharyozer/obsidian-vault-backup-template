@@ -116,6 +116,19 @@ This makes the setup flow more natural for agents — they invoke a command
 rather than reading and interpreting a doc. Humans can follow the same
 file directly.
 
+## Lock git-crypt before merging template updates
+
+When git-crypt is unlocked, its smudge/clean filters create phantom diffs
+on vault files (encrypted on-disk bytes differ from the clean filter's
+output). `git merge` internally tries to stash these diffs and fails with
+"fatal: stash failed."
+
+The fix: **lock** git-crypt before merging. When locked, the filters are
+inactive, the tree is clean, and merge works normally. Unlock again after
+pushing if you want to browse vault files locally.
+
+Discovered while testing the template update pull flow.
+
 ## Open questions
 
 ### Still observing
