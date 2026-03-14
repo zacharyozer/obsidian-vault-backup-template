@@ -1,6 +1,6 @@
 # obsidian-vault-backup-template
 
-Permanent, encrypted version history for your Obsidian vault. Uses [obsidian-headless](https://github.com/obsidianmd/obsidian-headless) to pull your vault via Obsidian Sync, encrypts at rest with git-crypt, and commits hourly via GitHub Actions.
+This template gives your Obsidian vault permanent, encrypted version history in GitHub. It uses [obsidian-headless](https://github.com/obsidian-headless/obsidian-headless) to pull your vault via Obsidian Sync, encrypts everything at rest with git-crypt, and commits a snapshot to GitHub every hour via GitHub Actions — so you get a full, browsable history of every change you've ever made.
 
 ## Prerequisites
 
@@ -30,10 +30,12 @@ If the template improves, you can pull changes into your backup repo:
 # One-time: add the template as a remote
 git remote add template https://github.com/<owner>/obsidian-vault-backup-template.git
 
-# When you want to pull updates (git-crypt must be unlocked):
+# When you want to pull updates (git-crypt must be locked):
+git-crypt lock          # if currently unlocked
 git fetch template
 git merge template/main
 git push
+git-crypt unlock        # if you want to browse vault files locally
 ```
 
 ## Documentation

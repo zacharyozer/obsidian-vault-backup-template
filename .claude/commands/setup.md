@@ -219,11 +219,13 @@ One-time -- add the template as a remote:
 git remote add template https://github.com/<owner>/obsidian-vault-backup-template.git
 ```
 
-To pull updates (make sure git-crypt is unlocked first):
+To pull updates (git-crypt must be **locked** — phantom diffs from the
+git-crypt filter break `git merge`'s internal stash when unlocked):
 
 ```bash
-git-crypt unlock /path/to/key.bin  # if not already unlocked
+git-crypt lock                     # if currently unlocked
 git fetch template
 git merge template/main
 git push
+git-crypt unlock /path/to/key.bin  # if you want to browse vault files locally
 ```
