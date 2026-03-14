@@ -94,6 +94,28 @@ Repo size monitoring and staleness detection live in a separate daily
 workflow (`staleness-check.yml`), not in the sync workflow. Keeps the
 sync workflow focused on one job.
 
+## 1Password batch read (temp file + jq)
+
+When pulling credentials from 1Password, use a single `op item get`
+call with `--format json` instead of individual `op read` calls per
+field. This reduces biometric prompts from 4+ to 1.
+
+Gotcha: the JSON can't be piped through a shell variable (`echo "$CREDS"
+| jq`). 1Password items with notes fields contain control characters
+that survive in the JSON file but get mangled by shell expansion,
+breaking `jq`. Writing to a temp file and reading with `jq` from the
+file avoids this.
+
+## Setup guide as a Claude Code skill
+
+The setup guide lives in `.claude/commands/setup.md`, making it invocable
+as `/setup` in Claude Code. `AGENTS.md` is a thin pointer that directs
+agents (and humans) to the skill file.
+
+This makes the setup flow more natural for agents — they invoke a command
+rather than reading and interpreting a doc. Humans can follow the same
+file directly.
+
 ## Open questions
 
 ### Still observing
