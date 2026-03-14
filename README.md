@@ -12,8 +12,9 @@ This template gives your Obsidian vault permanent, encrypted version history in 
 ## Quick start
 
 1. Click **Use this template** on GitHub to create your repo.
-2. Follow the guided setup in [AGENTS.md](AGENTS.md).
-3. Set the 7 required GitHub secrets listed there.
+2. Run `/setup` in [Claude Code](https://claude.ai/claude-code) for guided setup.
+   Or follow the instructions manually in [`.claude/commands/setup.md`](.claude/commands/setup.md).
+3. Set the 7 required GitHub secrets.
 4. Done. The hourly sync starts automatically.
 
 ## Cost
@@ -37,5 +38,5 @@ git push
 
 ## Documentation
 
-- [AGENTS.md](AGENTS.md) — guided setup for Claude (or you, if you prefer to follow it directly)
+- [`.claude/commands/setup.md`](.claude/commands/setup.md) — guided setup (invocable as `/setup` in Claude Code)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — architecture overview and developer docs
