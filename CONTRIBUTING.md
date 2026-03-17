@@ -13,7 +13,7 @@ Two GitHub Actions workflows handle everything.
 
 **`staleness-check.yml`** runs daily at 9am UTC:
 
-1. Checks that a vault commit landed within the last 48 hours
+1. Checks that a successful sync happened within the last 48 hours (via the `LAST_SYNC_SUCCESS` repo variable)
 2. Checks that the repo is under 50MB
 
 If either check fails, the workflow errors — which triggers a GitHub notification.

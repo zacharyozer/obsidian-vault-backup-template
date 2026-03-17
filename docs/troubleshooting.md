@@ -99,9 +99,9 @@ GitHub Actions sends email notifications on workflow failure by default.
 
 Runs daily at 9am UTC. Checks two things:
 
-1. **Staleness:** Last vault commit < 48 hours old. Catches disabled
-   crons (GitHub disables after 60 days of inactivity) and persistent
-   sync failures.
+1. **Staleness:** Last successful sync < 48 hours ago (via the
+   `LAST_SYNC_SUCCESS` repo variable). Catches disabled crons (GitHub
+   disables after 60 days of inactivity) and persistent sync failures.
 2. **Repo size:** Under 50MB. Catches surprise binaries early.
 
 Both checks fail the workflow on violation, triggering an email alert.
