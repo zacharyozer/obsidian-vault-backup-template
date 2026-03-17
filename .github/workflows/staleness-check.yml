@@ -10,25 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
-      - name: Check last commit age
+      - name: Check last sync age
         run: |
-          LAST_COMMIT=$(git log -1 --format=%ct -- vault/)
-          if [ -z "$LAST_COMMIT" ]; then
-            echo "::error::No vault commits found"
+          LAST_SYNC=$(gh variable get LAST_SYNC_SUCCESS 2>/dev/null || echo "")
+          if [ -z "$LAST_SYNC" ]; then
+            echo "::error::LAST_SYNC_SUCCESS variable not set — has sync ever run?"
             exit 1
           fi
 
           NOW=$(date +%s)
-          AGE_HOURS=$(( (NOW - LAST_COMMIT) / 3600 ))
-          echo "Last vault commit: $AGE_HOURS hours ago"
+          AGE_HOURS=$(( (NOW - LAST_SYNC) / 3600 ))
+          echo "Last successful sync: $AGE_HOURS hours ago"
 
           if [ "$AGE_HOURS" -gt 48 ]; then
-            echo "::error::Vault backup is stale ($AGE_HOURS hours old)"
+            echo "::error::Vault sync is stale ($AGE_HOURS hours since last successful sync)"
             exit 1
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check repo size
         run: |
