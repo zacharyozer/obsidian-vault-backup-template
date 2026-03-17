@@ -19,8 +19,9 @@ A GitHub Actions workflow runs hourly:
 3. Encrypts files with git-crypt
 4. Commits and pushes to this template
 
-A separate daily workflow checks that the backup is fresh and the repo
-isn't growing unexpectedly.
+A separate daily workflow checks that a successful sync happened within
+the last 48 hours (via the `LAST_SYNC_SUCCESS` repo variable) and that
+the repo isn't growing unexpectedly.
 
 ## What gets backed up
 
