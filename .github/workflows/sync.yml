@@ -86,12 +86,6 @@ jobs:
         env:
           OBSIDIAN_AUTH_TOKEN: ${{ env.OBSIDIAN_AUTH_TOKEN }}
 
-      - name: Record successful sync
-        if: steps.sync.outputs.synced == 'true'
-        run: gh variable set LAST_SYNC_SUCCESS "$(date +%s)"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Commit changes
         if: steps.sync.outputs.synced == 'true'
         run: |
@@ -104,3 +98,9 @@ jobs:
             git commit -m "vault snapshot $(date -u +'%Y-%m-%d %H:%M UTC')"
             git push
           fi
+
+      - name: Record successful sync
+        if: steps.sync.outputs.synced == 'true'
+        run: gh variable set LAST_SYNC_SUCCESS "$(date +%s)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
