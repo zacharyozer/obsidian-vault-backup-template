@@ -94,6 +94,34 @@ Repo size monitoring and staleness detection live in a separate daily
 workflow (`staleness-check.yml`), not in the sync workflow. Keeps the
 sync workflow focused on one job.
 
+## Staleness check: repo variable, not commit age
+
+Originally, the staleness check looked at the age of the last `vault/`
+commit. This caused false failures when the vault had no new content for
+48+ hours — the sync was running fine, but with nothing changed there
+was nothing to commit, so the "last commit" kept aging.
+
+The fix uses a GitHub repository variable (`LAST_SYNC_SUCCESS`) instead.
+The sync workflow writes a Unix timestamp to this variable after each
+successful run — including runs where sync succeeds but there are no new
+files to commit. The staleness check reads this variable instead of
+inspecting git history.
+
+Why a repo variable over alternatives:
+
+* **Not a commit** — writing a timestamp file to the repo would create
+  noise commits on every hourly run, even when the vault hasn't changed.
+  The whole point is to avoid commits when nothing changed.
+* **Not the Actions cache** — caches can be evicted at any time and have
+  a 7-day TTL. A staleness check that itself goes stale defeats the
+  purpose.
+* **Repo variables** are persistent, free, and readable/writable from
+  workflows via `gh variable get/set` with `GITHUB_TOKEN`.
+
+The timestamp is written *after* the commit/push step so it only records
+success when the full pipeline completes (sync + commit + push), or when
+sync succeeds with nothing to commit.
+
 ## 1Password batch read (temp file + jq)
 
 When pulling credentials from 1Password, use a single `op item get`
