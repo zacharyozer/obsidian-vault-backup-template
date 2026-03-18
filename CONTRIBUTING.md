@@ -1,6 +1,6 @@
 # Contributing
 
-## How it works
+## Architecture
 
 Two GitHub Actions workflows handle everything.
 
@@ -10,35 +10,66 @@ Two GitHub Actions workflows handle everything.
 2. Unlocks the repo with git-crypt
 3. Pulls the vault via `ob sync` from `obsidian-headless`
 4. Commits and pushes any changed files
+5. Force-updates an annotated `last-sync` tag to record the successful sync
 
 **`staleness-check.yml`** runs daily at 9am UTC:
 
-1. Checks that a vault commit landed within the last 48 hours
+1. Reads the `last-sync` tag's tagger date to check that a successful
+   sync happened within the last 48 hours
 2. Checks that the repo is under 50MB
 
 If either check fails, the workflow errors — which triggers a GitHub notification.
 
 ## Key design decisions
 
-**GitHub Actions over a VPS.** No infrastructure to maintain. Hourly cron is good enough because Obsidian Sync covers the last 30 days of fine-grained recovery.
+See `docs/knowledge/decisions.md` for the full list with rationale. The
+highlights:
 
-**git-crypt.** Even in a private repo, personal notes deserve encryption at rest. GitHub only sees encrypted blobs.
+- **GitHub Actions over a VPS.** No infrastructure to maintain.
+- **git-crypt.** Even in a private repo, personal notes deserve encryption at rest.
+- **Token-first auth with TOTP fallback.** Self-healing, no manual intervention.
+- **Annotated tag for health tracking.** Zero commits, zero bloat, works with existing permissions.
+- **Pull-only mode.** Prevents the headless client from pushing stale data back.
+- **Notes only, no plugins.** Plugins add noise without meaningful version history value.
 
-**Token-first auth with TOTP fallback.** The auth token is the fast path, but its expiry is undocumented. The workflow stores all credentials and automatically falls back to password+TOTP if the token fails. Self-healing, no manual intervention needed.
+## Three-repo model
 
-**git-crypt unlock before sync.** `ob sync` writes files, which dirties the working tree. `git-crypt unlock` needs a clean tree. Unlock must happen first.
+Changes flow through three repos:
 
-**Pull-only mode with a stable device name.** Prevents the headless client from pushing stale data back to Obsidian Sync. Also avoids creating a new "device" entry on every run.
+```
+dev ──> template ──> dev (QA) ──> production
+```
 
-**Local `npm install` for `otpauth`.** Global install on GitHub Actions puts modules in a path where `node -e` can't find them. Local install resolves this.
+| Repo | Purpose |
+|------|---------|
+| `obsidian-vault-backup-template` | Canonical source. Clean, generalized code and docs. No credentials. |
+| `obsidian-vault-backup-dev` | Development + testing. Has real Obsidian Sync credentials for a test vault. |
+| `obsidian-vault-backup` (or your fork) | Your actual vault backup. Pulls updates from the template. |
 
-**Notes only, no plugins.** Plugins are large, change frequently with updates, and are easily reinstalled. Including them would add noise to git history without meaningful value.
+### Feature development (workflow/code changes)
+
+1. **Develop** in the dev repo — iterate against real credentials
+2. **Port to template** — squash into a single commit, generalize, run
+   `/update-docs` to update all documentation
+3. **QA** — merge template into dev, run `/test-changes` to verify
+4. **Ship** — merge template into production (user reviews and merges)
+
+Squash into one commit when porting to template. Multiple commits are
+the exception, not the default — only when the change naturally breaks
+into independent pieces and there's a clear reason to separate them.
+
+### Doc-only changes
+
+Doc changes that don't affect workflows can go straight to template,
+then flow through QA and production.
 
 ## How to test changes
 
 You need an Obsidian Sync subscription to test end-to-end.
 
-1. Fork the template and create a test repo from it.
+### Quick test (single repo)
+
+1. Fork the template and create a dev repo from it.
 2. Set the required secrets for a test vault (see `AGENTS.md` for the full list).
 3. Trigger the sync workflow manually:
 
@@ -55,9 +86,20 @@ To test the staleness check:
 gh workflow run staleness-check.yml
 ```
 
+### Full test flow (three-repo pipeline)
+
+The full flow is encoded in two Claude Code skills:
+
+- **`/deploy-changes`** — Full pipeline from dev through production.
+  Calls `/test-changes` at the QA step.
+- **`/test-changes`** — Smoke test: trigger both workflows on dev and
+  verify they pass. Usable standalone or as part of `/deploy-changes`.
+
 ## How to contribute
 
-- Open a PR against this template repo.
-- Test with a real Obsidian Sync vault before submitting.
+- Develop in the dev repo, port to template when it works.
+- Test with a real Obsidian Sync vault before shipping.
 - Keep the sync workflow simple — it runs hourly and needs to be reliable.
-- If you're fixing an auth or sync issue, document what you found in the PR description. The failure modes here are subtle and worth capturing.
+- Update documentation alongside code changes (see `/update-docs`).
+- If you're fixing an auth or sync issue, document what you found. The
+  failure modes here are subtle and worth capturing.
