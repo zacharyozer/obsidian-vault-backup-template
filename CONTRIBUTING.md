@@ -71,20 +71,7 @@ You need an Obsidian Sync subscription to test end-to-end.
 
 1. Fork the template and create a dev repo from it.
 2. Set the required secrets for a test vault (see `AGENTS.md` for the full list).
-3. Trigger the sync workflow manually:
-
-```bash
-gh workflow run sync.yml
-```
-
-4. Check the workflow logs for errors.
-5. Verify that files appear in `vault/` locally and are encrypted blobs on GitHub.
-
-To test the staleness check:
-
-```bash
-gh workflow run staleness-check.yml
-```
+3. Run `/test-changes` to trigger both workflows and verify they pass.
 
 ### Full test flow (three-repo pipeline)
 
@@ -92,8 +79,8 @@ The full flow is encoded in two Claude Code skills:
 
 - **`/deploy-changes`** — Full pipeline from dev through production.
   Calls `/test-changes` at the QA step.
-- **`/test-changes`** — Smoke test: trigger both workflows on dev and
-  verify they pass. Usable standalone or as part of `/deploy-changes`.
+- **`/test-changes`** — Smoke test: trigger both workflows and verify
+  they pass. Usable standalone or as part of `/deploy-changes`.
 
 ## How to contribute
 

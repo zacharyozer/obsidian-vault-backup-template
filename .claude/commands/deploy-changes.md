@@ -59,7 +59,7 @@ This should be a normal merge (no `--allow-unrelated-histories`).
 
 Then run `/test-changes` to verify both workflows pass.
 
-If anything fails, fix in the template (not dev) and repeat from step 2.
+If anything fails, fix in the dev repo and repeat from step 1.
 
 ---
 
