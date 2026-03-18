@@ -129,6 +129,35 @@ pushing if you want to browse vault files locally.
 
 Discovered while testing the template update pull flow.
 
+## Tag-based health check (not repo variables)
+
+The original health check used `git log` to find the last vault commit.
+This produced false staleness alerts when the vault had no new content
+for 48+ hours — sync was running fine, there just wasn't anything new.
+
+**Why not repo variables?** `GITHUB_TOKEN` cannot write repository
+variables. The API returns 403 ("Resource not accessible by
+integration"). The `variables` permission scope doesn't exist for
+`GITHUB_TOKEN` — and adding it to the `permissions:` block breaks the
+workflow parser entirely (GitHub rejects the file as invalid YAML).
+A fine-grained PAT would work but adds a credential to maintain.
+
+**Why annotated tags?** On each successful sync, the workflow
+force-updates an annotated `last-sync` tag. The health check reads the
+tag's tagger date via `gh api repos/.../git/tags/<sha>`. This costs
+zero commits, zero repo bloat, zero extra secrets, and works with the
+existing `contents: write` permission.
+
+**Force-push scoping:** The sync step uses `git push origin
++refs/tags/last-sync`. The `+` prefix forces only the paired ref —
+it physically cannot affect branches. Do not change this to `--force`,
+which applies globally.
+
+**Branch protection:** Force-push protection on `main` would add a
+server-side guard, but requires GitHub Pro for private repos. Without
+Pro, the refspec scoping is the only safeguard. Worth enabling if you
+upgrade.
+
 ## Open questions
 
 ### Still observing
