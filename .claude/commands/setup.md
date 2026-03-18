@@ -206,8 +206,16 @@ remote vault.
 GitHub sends email on workflow failures by default. No setup needed.
 
 The daily health check (`staleness-check.yml`) runs at 9:00 UTC. It
-alerts if no vault commit exists in the last 48 hours or if the repo
-exceeds 50MB.
+alerts if no successful sync has occurred in the last 48 hours or if
+the repo exceeds 50MB.
+
+### Branch protection (recommended, requires GitHub Pro)
+
+If you have GitHub Pro, add a branch protection rule on `main` that
+blocks force pushes. This provides a server-side guard against
+accidental history loss. The sync workflow's tag force-push uses a
+scoped refspec (`+refs/tags/last-sync`) that can't affect branches,
+but branch protection adds defense in depth.
 
 ---
 
