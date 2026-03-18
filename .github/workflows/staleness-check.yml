@@ -9,18 +9,19 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          fetch-tags: true
+
       - name: Check last sync age
         run: |
-          TAG_REF=$(gh api repos/${{ github.repository }}/git/refs/tags/last-sync \
-            --jq '.object.sha' 2>/dev/null || echo "")
-          if [ -z "$TAG_REF" ]; then
+          LAST_EPOCH=$(git for-each-ref refs/tags/last-sync --format='%(taggerdate:unix)')
+          if [ -z "$LAST_EPOCH" ]; then
             echo "::error::No last-sync tag found — has sync ever run?"
             exit 1
           fi
 
-          TAG_DATE=$(gh api repos/${{ github.repository }}/git/tags/$TAG_REF \
-            --jq '.tagger.date')
-          LAST_EPOCH=$(date -d "$TAG_DATE" +%s)
           NOW=$(date +%s)
           AGE_HOURS=$(( (NOW - LAST_EPOCH) / 3600 ))
           echo "Last successful sync: $AGE_HOURS hours ago"
@@ -29,8 +30,6 @@ jobs:
             echo "::error::Vault sync is stale ($AGE_HOURS hours since last successful sync)"
             exit 1
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check repo size
         run: |

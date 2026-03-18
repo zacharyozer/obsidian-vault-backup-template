@@ -89,7 +89,6 @@ obsidian-vault-backup-template/
     │   └── decisions.md
     ├── troubleshooting.md
     └── logs/                     # Build narrative
-        └── 2026-03-13-build-log.md
 ```
 
 ## Cost

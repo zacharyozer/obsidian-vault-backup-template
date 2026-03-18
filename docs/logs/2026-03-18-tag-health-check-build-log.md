@@ -42,7 +42,7 @@ Manual workflow dispatch confirmed the parse error:
 ## Solution
 
 Force-update an annotated `last-sync` tag after each successful sync.
-The health check reads the tag's tagger date via the GitHub API.
+The health check reads the tag's tagger date via git.
 
 **sync.yml** — new step after "Commit changes":
 ```yaml
@@ -53,14 +53,23 @@ The health check reads the tag's tagger date via the GitHub API.
     git push origin +refs/tags/last-sync
 ```
 
-**staleness-check.yml** — reads tagger date via API (no checkout needed):
+**staleness-check.yml** — reads tagger date via git (one command):
 ```yaml
+- uses: actions/checkout@v6
+  with:
+    fetch-depth: 1
+    fetch-tags: true
+
 - name: Check last sync age
   run: |
-    TAG_REF=$(gh api repos/.../git/refs/tags/last-sync --jq '.object.sha')
-    TAG_DATE=$(gh api repos/.../git/tags/$TAG_REF --jq '.tagger.date')
-    # compare TAG_DATE against 48-hour threshold
+    LAST_EPOCH=$(git for-each-ref refs/tags/last-sync --format='%(taggerdate:unix)')
+    # compare LAST_EPOCH against 48-hour threshold
 ```
+
+Initially used the GitHub API (`gh api repos/.../git/tags/<sha>`) to
+read the tag date, but switched to `git for-each-ref` — one command that
+returns the epoch timestamp directly. Simpler script, no API calls, no
+`date -d` parsing, no `GH_TOKEN` needed for that step.
 
 The `+refs/tags/last-sync` refspec scopes the force-push to that single
 tag ref. It cannot affect branches.
@@ -94,5 +103,6 @@ Tested on the test repo:
 - Annotated git tags carry their own timestamp (tagger date), independent
   of the commit they point to. Useful for recording metadata without
   creating commits.
-- The GitHub API returns the tagger date for annotated tags at
-  `GET /repos/{owner}/{repo}/git/tags/{sha}` under `.tagger.date`.
+- `git for-each-ref refs/tags/<name> --format='%(taggerdate:unix)'`
+  returns the tagger date as a unix epoch — simpler than the two-step
+  GitHub API approach and avoids `date -d` parsing.

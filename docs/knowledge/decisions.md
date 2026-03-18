@@ -144,9 +144,9 @@ A fine-grained PAT would work but adds a credential to maintain.
 
 **Why annotated tags?** On each successful sync, the workflow
 force-updates an annotated `last-sync` tag. The health check reads the
-tag's tagger date via `gh api repos/.../git/tags/<sha>`. This costs
-zero commits, zero repo bloat, zero extra secrets, and works with the
-existing `contents: write` permission.
+tag's tagger date via `git for-each-ref` — one command that returns the
+unix timestamp directly. This costs zero commits, zero repo bloat, zero
+extra secrets, and works with the existing `contents: write` permission.
 
 **Force-push scoping:** The sync step uses `git push origin
 +refs/tags/last-sync`. The `+` prefix forces only the paired ref —
