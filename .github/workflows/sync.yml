@@ -88,12 +88,21 @@ jobs:
       - name: Commit changes
         if: steps.sync.outputs.synced == 'true'
         run: |
+          git config user.name "obsidian-backup"
+          git config user.email "obsidian-backup@users.noreply.github.com"
           git add vault/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git config user.name "obsidian-backup"
-            git config user.email "obsidian-backup@users.noreply.github.com"
             git commit -m "vault snapshot $(date -u +'%Y-%m-%d %H:%M UTC')"
             git push
           fi
+
+      - name: Record successful sync
+        if: steps.sync.outputs.synced == 'true'
+        run: |
+          # SAFETY: The + prefix force-updates ONLY this tag ref.
+          # It cannot affect branches. Do not change this to --force
+          # which would apply globally to all refs in the push.
+          git tag -f -a last-sync -m "$(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push origin +refs/tags/last-sync
