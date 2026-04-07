@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  SYNC_TIMEOUT: ${{ vars.SYNC_TIMEOUT || '20' }}
+  SYNC_TIMEOUT: ${{ vars.SYNC_TIMEOUT || '15' }}
 
 jobs:
   sync:
@@ -89,7 +89,7 @@ jobs:
           # ob sync hangs indefinitely when the server is unresponsive or
           # another client holds the connection. The -k 10 flag sends SIGKILL
           # 10s after SIGTERM, since ob catches SIGTERM but doesn't always exit.
-          MAX_ATTEMPTS=3
+          MAX_ATTEMPTS=2
           for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
             echo "Sync attempt $attempt/$MAX_ATTEMPTS..."
             if timeout -k 10 "$SYNC_TIMEOUT" ob sync --path ./vault 2>&1; then
