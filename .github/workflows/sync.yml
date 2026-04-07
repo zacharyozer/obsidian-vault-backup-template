@@ -173,10 +173,8 @@ jobs:
 
           if (!issueNum) {
             try { gh(`label create "${LABEL}" --description "Sync dashboard" --color 0e8a16`); } catch {}
-            const created = JSON.parse(
-              gh(`issue create --title "${TITLE}" --label "${LABEL}" --body ${JSON.stringify(INITIAL_BODY)} --json number`)
-            );
-            issueNum = created.number;
+            const url = gh(`issue create --title "${TITLE}" --label "${LABEL}" --body ${JSON.stringify(INITIAL_BODY)}`);
+            issueNum = parseInt(url.split('/').pop());
             try { gh(`issue pin ${issueNum}`); } catch {}
           }
 
