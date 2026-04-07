@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 env:
   SYNC_TIMEOUT: ${{ vars.SYNC_TIMEOUT || '15' }}
@@ -81,10 +82,15 @@ jobs:
               if (fs.existsSync(f)) { const c = JSON.parse(fs.readFileSync(f)); console.log(c.host); break; }
             }
           ")
+          echo "sync_host=$SYNC_HOST" >> "$GITHUB_OUTPUT"
           echo "Sync server: $SYNC_HOST"
-          curl -sf --max-time 5 "https://$SYNC_HOST" > /dev/null 2>&1 \
-            && echo "Server reachable (HTTPS)" \
-            || echo "::warning::Server unreachable or slow: $SYNC_HOST"
+          if curl -sf --max-time 5 "https://$SYNC_HOST" > /dev/null 2>&1; then
+            echo "Server reachable (HTTPS)"
+            echo "server_reachable=Yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Server unreachable or slow: $SYNC_HOST"
+            echo "server_reachable=No" >> "$GITHUB_OUTPUT"
+          fi
 
           # ob sync hangs indefinitely when the server is unresponsive or
           # another client holds the connection. The -k 10 flag sends SIGKILL
@@ -128,3 +134,137 @@ jobs:
           # which would apply globally to all refs in the push.
           git tag -f -a last-sync -m "$(date -u +'%Y-%m-%d %H:%M UTC')"
           git push origin +refs/tags/last-sync
+
+      - name: Update sync status issue
+        if: always()
+        run: |
+          node << 'SCRIPT'
+          const { execSync } = require('child_process');
+          const gh = (cmd) => execSync(`gh ${cmd}`, { encoding: 'utf8' }).trim();
+          const ghJSON = (cmd) => JSON.parse(gh(`${cmd} --json number,body`));
+
+          const LABEL = 'sync-dashboard';
+          const TITLE = 'Sync Status';
+          const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+          const synced = process.env.SYNCED === 'true';
+          const server = process.env.SERVER || 'unknown';
+          const reachable = process.env.REACHABLE || 'unknown';
+
+          const INITIAL_BODY = [
+            '## Sync Status',
+            '',
+            '**Last successful sync:** never',
+            '**Successful syncs (this month):** 0',
+            '**Failed syncs (this month):** 0',
+            `**Sync server:** ${server}`,
+            '',
+            '### Recent failures',
+            '',
+            '| Time (UTC) | Server reachable |',
+            '|------------|------------------|',
+          ].join('\n');
+
+          // Find or create the status issue
+          let issueNum;
+          try {
+            const issues = JSON.parse(gh(`issue list --label "${LABEL}" --state open --json number`));
+            issueNum = issues[0]?.number;
+          } catch {}
+
+          if (!issueNum) {
+            try { gh(`label create "${LABEL}" --description "Sync dashboard" --color 0e8a16`); } catch {}
+            const created = JSON.parse(
+              gh(`issue create --title "${TITLE}" --label "${LABEL}" --body ${JSON.stringify(INITIAL_BODY)} --json number`)
+            );
+            issueNum = created.number;
+            try { gh(`issue pin ${issueNum}`); } catch {}
+          }
+
+          // Read and parse current body
+          let body = JSON.parse(gh(`issue view ${issueNum} --json body`)).body;
+
+          const getCounter = (label) => {
+            const m = body.match(new RegExp(`\\*\\*${label}:\\*\\* (\\d+)`));
+            return m ? parseInt(m[1]) : 0;
+          };
+          const setCounter = (label, val) => {
+            body = body.replace(
+              new RegExp(`\\*\\*${label}:\\*\\* \\d+`),
+              `**${label}:** ${val}`
+            );
+          };
+          const setField = (label, val) => {
+            body = body.replace(
+              new RegExp(`\\*\\*${label}:\\*\\* .*`),
+              `**${label}:** ${val}`
+            );
+          };
+
+          let successCount = getCounter('Successful syncs \\(this month\\)');
+          let failCount = getCounter('Failed syncs \\(this month\\)');
+
+          if (synced) {
+            successCount++;
+            setField('Last successful sync', `${now} UTC`);
+          } else {
+            failCount++;
+            // Add failure row after the separator line
+            const row = `| ${now} | ${reachable} |`;
+            body = body.replace(
+              /(\|[-\s|]+\|)\n/,
+              `$1\n${row}\n`
+            );
+            // Cap at 50 failure rows
+            const lines = body.split('\n');
+            let inTable = false;
+            let rowCount = 0;
+            const filtered = lines.filter(line => {
+              if (line.startsWith('|---')) { inTable = true; return true; }
+              if (inTable && line.startsWith('|')) {
+                rowCount++;
+                return rowCount <= 50;
+              }
+              if (inTable && !line.startsWith('|')) inTable = false;
+              return true;
+            });
+            body = filtered.join('\n');
+          }
+
+          setCounter('Successful syncs \\(this month\\)', successCount);
+          setCounter('Failed syncs \\(this month\\)', failCount);
+          setField('Sync server', server);
+
+          // Monthly archive: on the 1st, archive and reset
+          const day = new Date().getUTCDate();
+          if (day === 1) {
+            const lastMonth = new Date(Date.now() - 86400000)
+              .toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+            const archiveTitle = `Sync Log: ${lastMonth}`;
+            let existing;
+            try {
+              existing = JSON.parse(gh(`issue list --search "${archiveTitle}" --json number`));
+            } catch { existing = []; }
+            if (!existing.length) {
+              gh(`issue create --title ${JSON.stringify(archiveTitle)} --label "${LABEL}" --body ${JSON.stringify(body)}`);
+              setCounter('Successful syncs \\(this month\\)', 0);
+              setCounter('Failed syncs \\(this month\\)', 0);
+              // Clear failure rows
+              const lines = body.split('\n');
+              let inTable = false;
+              body = lines.filter(line => {
+                if (line.startsWith('|---')) { inTable = true; return true; }
+                if (inTable && line.startsWith('|')) return false;
+                if (inTable && !line.startsWith('|')) inTable = false;
+                return true;
+              }).join('\n');
+            }
+          }
+
+          gh(`issue edit ${issueNum} --body ${JSON.stringify(body)}`);
+          console.log(`Updated issue #${issueNum}: synced=${synced}, successes=${successCount}, failures=${failCount}`);
+          SCRIPT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNCED: ${{ steps.sync.outputs.synced }}
+          SERVER: ${{ steps.sync.outputs.sync_host }}
+          REACHABLE: ${{ steps.sync.outputs.server_reachable }}
