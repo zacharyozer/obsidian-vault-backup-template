@@ -71,21 +71,24 @@ jobs:
             --device-name "gh-actions-backup"
           ob sync-config --path ./vault --mode pull-only
 
-          # ob sync fails if the desktop/mobile app is actively connected.
-          # This is expected — Obsidian Sync allows one connection at a time.
-          # Retry once after 5s, then gracefully skip if still blocked.
-          if timeout "$SYNC_TIMEOUT" ob sync --path ./vault 2>&1; then
-            echo "synced=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::Sync blocked (desktop app likely open). Retrying in 5s..."
-            sleep 5
-            if timeout "$SYNC_TIMEOUT" ob sync --path ./vault 2>&1; then
+          # ob sync hangs indefinitely when the server is unresponsive or
+          # another client holds the connection. The -k 10 flag sends SIGKILL
+          # 10s after SIGTERM, since ob catches SIGTERM but doesn't always exit.
+          MAX_ATTEMPTS=4
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            echo "Sync attempt $attempt/$MAX_ATTEMPTS..."
+            if timeout -k 10 "$SYNC_TIMEOUT" ob sync --path ./vault 2>&1; then
               echo "synced=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "::warning::Sync still blocked. Skipping this run."
-              echo "synced=false" >> "$GITHUB_OUTPUT"
+              break
             fi
-          fi
+            if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+              echo "::warning::Sync failed after $MAX_ATTEMPTS attempts. Skipping this run."
+              echo "synced=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Sync attempt $attempt failed. Retrying in 5s..."
+              sleep 5
+            fi
+          done
         env:
           OBSIDIAN_AUTH_TOKEN: ${{ env.OBSIDIAN_AUTH_TOKEN }}
 
