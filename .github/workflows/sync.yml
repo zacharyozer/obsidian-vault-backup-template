@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  SYNC_TIMEOUT: ${{ vars.SYNC_TIMEOUT || '60' }}
+  SYNC_TIMEOUT: ${{ vars.SYNC_TIMEOUT || '20' }}
 
 jobs:
   sync:
@@ -71,10 +71,25 @@ jobs:
             --device-name "gh-actions-backup"
           ob sync-config --path ./vault --mode pull-only
 
+          # Print diagnostics: config, server host, and connectivity
+          ob sync-status --path ./vault
+          SYNC_HOST=$(node -e "
+            const fs = require('fs'), path = require('path');
+            const cfgDir = path.join(require('os').homedir(), '.config/obsidian-headless/sync');
+            for (const d of fs.readdirSync(cfgDir)) {
+              const f = path.join(cfgDir, d, 'config.json');
+              if (fs.existsSync(f)) { const c = JSON.parse(fs.readFileSync(f)); console.log(c.host); break; }
+            }
+          ")
+          echo "Sync server: $SYNC_HOST"
+          curl -sf --max-time 5 "https://$SYNC_HOST" > /dev/null 2>&1 \
+            && echo "Server reachable (HTTPS)" \
+            || echo "::warning::Server unreachable or slow: $SYNC_HOST"
+
           # ob sync hangs indefinitely when the server is unresponsive or
           # another client holds the connection. The -k 10 flag sends SIGKILL
           # 10s after SIGTERM, since ob catches SIGTERM but doesn't always exit.
-          MAX_ATTEMPTS=4
+          MAX_ATTEMPTS=3
           for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
             echo "Sync attempt $attempt/$MAX_ATTEMPTS..."
             if timeout -k 10 "$SYNC_TIMEOUT" ob sync --path ./vault 2>&1; then
