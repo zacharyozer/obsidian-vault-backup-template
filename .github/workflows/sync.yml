@@ -185,25 +185,26 @@ jobs:
           // Read and parse current body
           let body = JSON.parse(gh(`issue view ${issueNum} --json body`)).body;
 
+          const escRe = (s) => s.replace(/[()]/g, '\\$&');
           const getCounter = (label) => {
-            const m = body.match(new RegExp(`\\*\\*${label}:\\*\\* (\\d+)`));
+            const m = body.match(new RegExp(`\\*\\*${escRe(label)}:\\*\\* (\\d+)`));
             return m ? parseInt(m[1]) : 0;
           };
           const setCounter = (label, val) => {
             body = body.replace(
-              new RegExp(`\\*\\*${label}:\\*\\* \\d+`),
+              new RegExp(`\\*\\*${escRe(label)}:\\*\\* \\d+`),
               `**${label}:** ${val}`
             );
           };
           const setField = (label, val) => {
             body = body.replace(
-              new RegExp(`\\*\\*${label}:\\*\\* .*`),
+              new RegExp(`\\*\\*${escRe(label)}:\\*\\* .*`),
               `**${label}:** ${val}`
             );
           };
 
-          let successCount = getCounter('Successful syncs \\(this month\\)');
-          let failCount = getCounter('Failed syncs \\(this month\\)');
+          let successCount = getCounter('Successful syncs (this month)');
+          let failCount = getCounter('Failed syncs (this month)');
 
           if (synced) {
             successCount++;
@@ -232,8 +233,8 @@ jobs:
             body = filtered.join('\n');
           }
 
-          setCounter('Successful syncs \\(this month\\)', successCount);
-          setCounter('Failed syncs \\(this month\\)', failCount);
+          setCounter('Successful syncs (this month)', successCount);
+          setCounter('Failed syncs (this month)', failCount);
           setField('Sync server', server);
 
           // Monthly archive: on the 1st, archive and reset
@@ -248,8 +249,8 @@ jobs:
             } catch { existing = []; }
             if (!existing.length) {
               ghWithBody(`issue create --title ${JSON.stringify(archiveTitle)} --label "${LABEL}"`, body);
-              setCounter('Successful syncs \\(this month\\)', 0);
-              setCounter('Failed syncs \\(this month\\)', 0);
+              setCounter('Successful syncs (this month)', 0);
+              setCounter('Failed syncs (this month)', 0);
               // Clear failure rows
               const lines = body.split('\n');
               let inTable = false;
