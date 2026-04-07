@@ -140,8 +140,12 @@ jobs:
         run: |
           node << 'SCRIPT'
           const { execSync } = require('child_process');
+          const fs = require('fs');
           const gh = (cmd) => execSync(`gh ${cmd}`, { encoding: 'utf8' }).trim();
-          const ghJSON = (cmd) => JSON.parse(gh(`${cmd} --json number,body`));
+          const ghWithBody = (cmd, body) => {
+            fs.writeFileSync('/tmp/issue-body.md', body);
+            return gh(`${cmd} --body-file /tmp/issue-body.md`);
+          };
 
           const LABEL = 'sync-dashboard';
           const TITLE = 'Sync Status';
@@ -173,7 +177,7 @@ jobs:
 
           if (!issueNum) {
             try { gh(`label create "${LABEL}" --description "Sync dashboard" --color 0e8a16`); } catch {}
-            const url = gh(`issue create --title "${TITLE}" --label "${LABEL}" --body ${JSON.stringify(INITIAL_BODY)}`);
+            const url = ghWithBody(`issue create --title "${TITLE}" --label "${LABEL}"`, INITIAL_BODY);
             issueNum = parseInt(url.split('/').pop());
             try { gh(`issue pin ${issueNum}`); } catch {}
           }
@@ -243,7 +247,7 @@ jobs:
               existing = JSON.parse(gh(`issue list --search "${archiveTitle}" --json number`));
             } catch { existing = []; }
             if (!existing.length) {
-              gh(`issue create --title ${JSON.stringify(archiveTitle)} --label "${LABEL}" --body ${JSON.stringify(body)}`);
+              ghWithBody(`issue create --title ${JSON.stringify(archiveTitle)} --label "${LABEL}"`, body);
               setCounter('Successful syncs \\(this month\\)', 0);
               setCounter('Failed syncs \\(this month\\)', 0);
               // Clear failure rows
@@ -258,7 +262,7 @@ jobs:
             }
           }
 
-          gh(`issue edit ${issueNum} --body ${JSON.stringify(body)}`);
+          ghWithBody(`issue edit ${issueNum}`, body);
           console.log(`Updated issue #${issueNum}: synced=${synced}, successes=${successCount}, failures=${failCount}`);
           SCRIPT
         env:
