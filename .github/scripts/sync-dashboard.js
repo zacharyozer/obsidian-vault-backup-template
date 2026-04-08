@@ -149,7 +149,8 @@ function buildDashboard(allRuns, lastSyncLine, serverLine) {
   const uptime30 = total30 ? ((success30 / total30) * 100).toFixed(1) : '0.0';
   const avgRuntime30 = runtimes30.length
     ? Math.round(runtimes30.reduce((a, b) => a + b, 0) / runtimes30.length) : 0;
-  const maxY = Math.max(28, ...totalBars) + 2;
+  // Extra headroom so GitHub's mermaid toolbar doesn't overlap the bars
+  const maxY = Math.max(28, ...totalBars) + 10;
 
   // Today
   const todayBucket = dayBuckets[todayKey] || { total: 0, success: 0, runtimes: [] };
