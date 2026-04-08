@@ -66,8 +66,6 @@ jobs:
       - name: Setup and sync vault
         id: sync
         run: |
-          START_SECONDS=$SECONDS
-
           ob sync-setup \
             --vault "${{ secrets.OBSIDIAN_VAULT_NAME }}" \
             --path ./vault \
@@ -121,7 +119,6 @@ jobs:
               sleep 5
             fi
           done
-          echo "runtime_s=$((SECONDS - START_SECONDS))" >> "$GITHUB_OUTPUT"
         env:
           OBSIDIAN_AUTH_TOKEN: ${{ env.OBSIDIAN_AUTH_TOKEN }}
 
@@ -149,7 +146,11 @@ jobs:
 
       - name: Log sync result and update dashboard
         if: always()
-        run: node .github/scripts/sync-dashboard.js
+        run: |
+          RUNTIME=${{ steps.sync.outputs.runtime_s }}
+          # Use job-level elapsed time if available (more accurate for billing)
+          JOB_RUNTIME=${SECONDS:-$RUNTIME}
+          RUNTIME=$JOB_RUNTIME node .github/scripts/sync-dashboard.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TZ_DISPLAY: ${{ env.TZ_DISPLAY }}
@@ -157,4 +158,3 @@ jobs:
           SYNCED: ${{ steps.sync.outputs.synced }}
           SERVER: ${{ steps.sync.outputs.sync_host }}
           REACHABLE: ${{ steps.sync.outputs.server_reachable }}
-          RUNTIME: ${{ steps.sync.outputs.runtime_s }}
