@@ -105,9 +105,10 @@ jobs:
 
           console.log(`Loaded ${allRuns.length} run records from ${logIssues.length} log issues`);
 
-          // --- Build daily buckets for last 30 days ---
+          // --- Build daily buckets for last 30 days (excluding today) ---
+          const todayKey = now.toISOString().slice(0, 10);
           const dayBuckets = {};
-          for (let d = 0; d < 30; d++) {
+          for (let d = 1; d <= 30; d++) {
             const date = new Date(now - d * 86400000);
             const key = date.toISOString().slice(0, 10);
             dayBuckets[key] = { total: 0, success: 0, runtimes: [] };
@@ -125,7 +126,7 @@ jobs:
           const days = Object.keys(dayBuckets).sort();
           const dayLabels = days.map(d => {
             const dt = new Date(d + 'T00:00:00Z');
-            return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`;
+            return `${dt.getUTCDate()}`;
           });
           const totalBars = days.map(d => dayBuckets[d].total);
           const successLine = days.map(d => dayBuckets[d].success);
@@ -168,9 +169,14 @@ jobs:
             return `| ${label} | ${b.success} | ${failed} | ${uptime}% | ${avg}s |`;
           });
 
-          // --- Build today's section ---
-          const todayKey = now.toISOString().slice(0, 10);
-          const todayBucket = dayBuckets[todayKey] || { total: 0, success: 0, runtimes: [] };
+          // --- Build today's section (from comments, not dayBuckets) ---
+          const todayBucket = { total: 0, success: 0, runtimes: [] };
+          for (const run of allRuns) {
+            if (!run.ts.startsWith(todayKey)) continue;
+            todayBucket.total++;
+            if (run.result === 'success') todayBucket.success++;
+            if (run.runtime_s) todayBucket.runtimes.push(run.runtime_s);
+          }
           const todayFailed = todayBucket.total - todayBucket.success;
           const todayAvg = todayBucket.runtimes.length
             ? Math.round(todayBucket.runtimes.reduce((a, b) => a + b, 0) / todayBucket.runtimes.length)
@@ -195,7 +201,7 @@ jobs:
             `### Today (${todayLabel})`,
             `${todayBucket.success} success, ${todayFailed} failed | Avg runtime: ${todayAvg}s`,
             '',
-            '### Past 30 Days',
+            '### Past 30 Days (through yesterday)',
             `${success30} success, ${failed30} failed | Uptime: ${uptime30}% | Avg runtime: ${avgRuntime30}s`,
             '',
             '```mermaid',
