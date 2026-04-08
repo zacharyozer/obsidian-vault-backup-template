@@ -213,7 +213,7 @@ jobs:
           let todaySuccess = 0, todayFailed = 0, todayRuntimes = [];
 
           const commentsRaw = gh(
-            `api repos/${REPO}/issues/${logIssueNum}/comments --per-page 100 --paginate`
+            `api repos/${REPO}/issues/${logIssueNum}/comments?per_page=100 --paginate`
           );
           const comments = JSON.parse(commentsRaw.replace(/\]\[/g, ',') || '[]');
           for (const c of comments) {

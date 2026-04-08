@@ -88,7 +88,7 @@ jobs:
 
           for (const issue of logIssues) {
             const commentsRaw = gh(
-              `api repos/${REPO}/issues/${issue.number}/comments --per-page 100 --paginate`
+              `api repos/${REPO}/issues/${issue.number}/comments?per_page=100 --paginate`
             );
             const comments = JSON.parse(commentsRaw.replace(/\]\[/g, ',') || '[]');
 
