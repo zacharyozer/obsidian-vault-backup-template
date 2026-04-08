@@ -5,6 +5,9 @@ on:
     - cron: '0 9 * * *'
   workflow_dispatch:
 
+permissions:
+  issues: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -41,5 +44,185 @@ jobs:
             echo "::error::Repo size is ${REPO_MB}MB — investigate large files"
             exit 1
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Update sync dashboard rollup
+        run: |
+          node << 'SCRIPT'
+          const { execSync } = require('child_process');
+          const fs = require('fs');
+          const gh = (cmd) => execSync(`gh ${cmd}`, { encoding: 'utf8' }).trim();
+          const ghWithBody = (cmd, body) => {
+            fs.writeFileSync('/tmp/issue-body.md', body);
+            return gh(`${cmd} --body-file /tmp/issue-body.md`);
+          };
+
+          const LOG_LABEL = 'sync-log';
+          const DASH_LABEL = 'sync-dashboard';
+
+          // Find dashboard issue
+          let dashIssueNum;
+          try {
+            const issues = JSON.parse(gh(`issue list --label "${DASH_LABEL}" --state open --json number`));
+            dashIssueNum = issues[0]?.number;
+          } catch {}
+          if (!dashIssueNum) { console.log('No dashboard issue found, skipping rollup'); process.exit(0); }
+
+          // Find all log issues (current + recent months)
+          let logIssues;
+          try {
+            logIssues = JSON.parse(gh(`issue list --label "${LOG_LABEL}" --state all --json number,title --limit 13`));
+          } catch { logIssues = []; }
+          if (!logIssues.length) { console.log('No log issues found, skipping rollup'); process.exit(0); }
+
+          // Collect all comments from log issues (last 2 months for 30-day window)
+          const now = new Date();
+          const thirtyDaysAgo = new Date(now - 30 * 86400000);
+          const allRuns = [];
+
+          for (const issue of logIssues) {
+            const comments = JSON.parse(gh(
+              `api repos/{owner}/{repo}/issues/${issue.number}/comments --per-page 100 --paginate -q '[.[] | {body, created_at}]'`
+            ).replace(/\]\[/g, ','));
+
+            for (const c of comments) {
+              const m = c.body.match(/```json\n(.*?)\n```/s);
+              if (!m) continue;
+              try {
+                const data = JSON.parse(m[1]);
+                allRuns.push(data);
+              } catch {}
+            }
+          }
+
+          console.log(`Loaded ${allRuns.length} run records from ${logIssues.length} log issues`);
+
+          // --- Build daily buckets for last 30 days ---
+          const dayBuckets = {};
+          for (let d = 0; d < 30; d++) {
+            const date = new Date(now - d * 86400000);
+            const key = date.toISOString().slice(0, 10);
+            dayBuckets[key] = { total: 0, success: 0, runtimes: [] };
+          }
+
+          for (const run of allRuns) {
+            const key = run.ts.slice(0, 10);
+            if (!dayBuckets[key]) continue;
+            dayBuckets[key].total++;
+            if (run.result === 'success') dayBuckets[key].success++;
+            if (run.runtime_s) dayBuckets[key].runtimes.push(run.runtime_s);
+          }
+
+          // Sort days oldest to newest
+          const days = Object.keys(dayBuckets).sort();
+          const dayLabels = days.map(d => {
+            const dt = new Date(d + 'T00:00:00Z');
+            return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`;
+          });
+          const totalBars = days.map(d => dayBuckets[d].total);
+          const successLine = days.map(d => dayBuckets[d].success);
+
+          // 30-day totals
+          let total30 = 0, success30 = 0, runtimes30 = [];
+          for (const d of days) {
+            total30 += dayBuckets[d].total;
+            success30 += dayBuckets[d].success;
+            runtimes30.push(...dayBuckets[d].runtimes);
+          }
+          const failed30 = total30 - success30;
+          const uptime30 = total30 ? ((success30 / total30) * 100).toFixed(1) : '0.0';
+          const avgRuntime30 = runtimes30.length
+            ? Math.round(runtimes30.reduce((a, b) => a + b, 0) / runtimes30.length)
+            : 0;
+
+          // Max y-axis for chart
+          const maxY = Math.max(28, ...totalBars) + 2;
+
+          // --- Build monthly history ---
+          const monthBuckets = {};
+          for (const run of allRuns) {
+            const key = run.ts.slice(0, 7); // YYYY-MM
+            if (!monthBuckets[key]) monthBuckets[key] = { total: 0, success: 0, runtimes: [] };
+            monthBuckets[key].total++;
+            if (run.result === 'success') monthBuckets[key].success++;
+            if (run.runtime_s) monthBuckets[key].runtimes.push(run.runtime_s);
+          }
+
+          const monthRows = Object.keys(monthBuckets).sort().reverse().map(key => {
+            const b = monthBuckets[key];
+            const failed = b.total - b.success;
+            const uptime = b.total ? ((b.success / b.total) * 100).toFixed(1) : '0.0';
+            const avg = b.runtimes.length
+              ? Math.round(b.runtimes.reduce((a, c) => a + c, 0) / b.runtimes.length)
+              : 0;
+            const dt = new Date(key + '-01T00:00:00Z');
+            const label = dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+            return `| ${label} | ${b.success} | ${failed} | ${uptime}% | ${avg}s |`;
+          });
+
+          // --- Build today's section ---
+          const todayKey = now.toISOString().slice(0, 10);
+          const todayBucket = dayBuckets[todayKey] || { total: 0, success: 0, runtimes: [] };
+          const todayFailed = todayBucket.total - todayBucket.success;
+          const todayAvg = todayBucket.runtimes.length
+            ? Math.round(todayBucket.runtimes.reduce((a, b) => a + b, 0) / todayBucket.runtimes.length)
+            : 0;
+          const todayLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+          // --- Get last sync info from dashboard ---
+          const existingBody = JSON.parse(gh(`issue view ${dashIssueNum} --json body`)).body;
+          const lastSyncMatch = existingBody.match(/\*\*Last sync:\*\* (.*)/);
+          const lastSyncLine = lastSyncMatch ? lastSyncMatch[1] : 'unknown';
+
+          const serverMatch = existingBody.match(/\*\*Server:\*\* (.*)/);
+          const serverLine = serverMatch ? serverMatch[1] : 'unknown';
+
+          // --- Assemble dashboard ---
+          const dashboard = [
+            '## Sync Status',
+            '',
+            `**Last sync:** ${lastSyncLine}`,
+            `**Server:** ${serverLine}`,
+            '',
+            `### Today (${todayLabel})`,
+            `${todayBucket.success} success, ${todayFailed} failed | Avg runtime: ${todayAvg}s`,
+            '',
+            '### Past 30 Days',
+            `${success30} success, ${failed30} failed | Uptime: ${uptime30}% | Avg runtime: ${avgRuntime30}s`,
+            '',
+            '```mermaid',
+            '---',
+            'config:',
+            '  theme: base',
+            '  themeVariables:',
+            '    xyChart:',
+            '      backgroundColor: "#ffffff"',
+            '      plotColorPalette: "#60a5fa, #dc2626"',
+            '---',
+            'xychart-beta',
+            `  title "Sync runs (last 30 days)"`,
+            `  x-axis [${dayLabels.map(l => `"${l}"`).join(',')}]`,
+            `  y-axis "Runs" 0 --> ${maxY}`,
+            `  bar [${totalBars.join(',')}]`,
+            `  line [${successLine.join(',')}]`,
+            '```',
+            '',
+            'Bar = total runs. Line = successful runs. Gap = failures.',
+            '',
+            '### Monthly History',
+            '',
+            '| Month | Success | Failed | Uptime | Avg Runtime |',
+            '|-------|---------|--------|--------|-------------|',
+            ...monthRows,
+          ].join('\n');
+
+          ghWithBody(`issue edit ${dashIssueNum}`, dashboard);
+          console.log(`Dashboard updated: 30d=${success30}/${total30}, months=${monthRows.length}`);
+          SCRIPT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

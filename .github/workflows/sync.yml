@@ -65,6 +65,8 @@ jobs:
       - name: Setup and sync vault
         id: sync
         run: |
+          START_SECONDS=$SECONDS
+
           ob sync-setup \
             --vault "${{ secrets.OBSIDIAN_VAULT_NAME }}" \
             --path ./vault \
@@ -110,6 +112,7 @@ jobs:
               sleep 5
             fi
           done
+          echo "runtime_s=$((SECONDS - START_SECONDS))" >> "$GITHUB_OUTPUT"
         env:
           OBSIDIAN_AUTH_TOKEN: ${{ env.OBSIDIAN_AUTH_TOKEN }}
 
@@ -135,7 +138,7 @@ jobs:
           git tag -f -a last-sync -m "$(date -u +'%Y-%m-%d %H:%M UTC')"
           git push origin +refs/tags/last-sync
 
-      - name: Update sync status issue
+      - name: Log sync result
         if: always()
         run: |
           node << 'SCRIPT'
@@ -147,127 +150,127 @@ jobs:
             return gh(`${cmd} --body-file /tmp/issue-body.md`);
           };
 
-          const LABEL = 'sync-dashboard';
-          const TITLE = 'Sync Status';
-          const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+          const LOG_LABEL = 'sync-log';
+          const DASH_LABEL = 'sync-dashboard';
+          const now = new Date();
+          const ts = now.toISOString().slice(0, 16).replace('T', ' ');
           const synced = process.env.SYNCED === 'true';
           const server = process.env.SERVER || 'unknown';
-          const reachable = process.env.REACHABLE || 'unknown';
+          const reachable = process.env.REACHABLE === 'Yes';
+          const runtime = parseInt(process.env.RUNTIME) || 0;
+          const monthName = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-          const INITIAL_BODY = [
-            '## Sync Status',
-            '',
-            '**Last successful sync:** never',
-            '**Successful syncs (this month):** 0',
-            '**Failed syncs (this month):** 0',
-            `**Sync server:** ${server}`,
-            '',
-            '### Recent failures',
-            '',
-            '| Time (UTC) | Server reachable |',
-            '|------------|------------------|',
-          ].join('\n');
-
-          // Find or create the status issue
-          let issueNum;
+          // --- 1. Log to monthly issue ---
+          const logTitle = `Sync Log: ${monthName}`;
+          let logIssueNum;
           try {
-            const issues = JSON.parse(gh(`issue list --label "${LABEL}" --state open --json number`));
-            issueNum = issues[0]?.number;
+            const issues = JSON.parse(gh(`issue list --label "${LOG_LABEL}" --state open --json number,title`));
+            logIssueNum = issues.find(i => i.title === logTitle)?.number;
           } catch {}
 
-          if (!issueNum) {
-            try { gh(`label create "${LABEL}" --description "Sync dashboard" --color 0e8a16`); } catch {}
-            const url = ghWithBody(`issue create --title "${TITLE}" --label "${LABEL}"`, INITIAL_BODY);
-            issueNum = parseInt(url.split('/').pop());
-            try { gh(`issue pin ${issueNum}`); } catch {}
+          if (!logIssueNum) {
+            try { gh(`label create "${LOG_LABEL}" --description "Sync run logs" --color 1d76db`); } catch {}
+            const url = ghWithBody(`issue create --title "${logTitle}" --label "${LOG_LABEL}"`,
+              `Monthly sync log. Each comment is one sync run.\n\nCreated automatically by the sync workflow.`);
+            logIssueNum = parseInt(url.split('/').pop());
           }
 
-          // Read and parse current body
-          let body = JSON.parse(gh(`issue view ${issueNum} --json body`)).body;
+          const icon = synced ? '✅' : '❌';
+          const resultWord = synced ? 'synced' : 'failed';
+          const jsonData = JSON.stringify({
+            ts: now.toISOString(),
+            result: synced ? 'success' : 'failed',
+            runtime_s: runtime,
+            server,
+            reachable,
+          });
 
-          const escRe = (s) => s.replace(/[()]/g, '\\$&');
-          const getCounter = (label) => {
-            const m = body.match(new RegExp(`\\*\\*${escRe(label)}:\\*\\* (\\d+)`));
-            return m ? parseInt(m[1]) : 0;
-          };
-          const setCounter = (label, val) => {
-            body = body.replace(
-              new RegExp(`\\*\\*${escRe(label)}:\\*\\* \\d+`),
-              `**${label}:** ${val}`
-            );
-          };
-          const setField = (label, val) => {
-            body = body.replace(
-              new RegExp(`\\*\\*${escRe(label)}:\\*\\* .*`),
-              `**${label}:** ${val}`
-            );
-          };
+          const comment = [
+            `${icon} ${ts} UTC — ${resultWord} in ${runtime}s`,
+            '',
+            '<details><summary>Raw data</summary>',
+            '',
+            '```json',
+            jsonData,
+            '```',
+            '',
+            '</details>',
+          ].join('\n');
 
-          let successCount = getCounter('Successful syncs (this month)');
-          let failCount = getCounter('Failed syncs (this month)');
+          ghWithBody(`issue comment ${logIssueNum}`, comment);
+          console.log(`Logged to issue #${logIssueNum}`);
 
-          if (synced) {
-            successCount++;
-            setField('Last successful sync', `${now} UTC`);
-          } else {
-            failCount++;
-            // Add failure row after the separator line
-            const row = `| ${now} | ${reachable} |`;
-            body = body.replace(
-              /(\|[-\s|]+\|)\n/,
-              `$1\n${row}\n`
-            );
-            // Cap at 50 failure rows
-            const lines = body.split('\n');
-            let inTable = false;
-            let rowCount = 0;
-            const filtered = lines.filter(line => {
-              if (line.startsWith('|---')) { inTable = true; return true; }
-              if (inTable && line.startsWith('|')) {
-                rowCount++;
-                return rowCount <= 50;
-              }
-              if (inTable && !line.startsWith('|')) inTable = false;
-              return true;
-            });
-            body = filtered.join('\n');
-          }
+          // --- 2. Update dashboard ---
+          let dashIssueNum;
+          try {
+            const issues = JSON.parse(gh(`issue list --label "${DASH_LABEL}" --state open --json number`));
+            dashIssueNum = issues[0]?.number;
+          } catch {}
 
-          setCounter('Successful syncs (this month)', successCount);
-          setCounter('Failed syncs (this month)', failCount);
-          setField('Sync server', server);
+          // Count today's results from log issue comments
+          const todayStr = now.toISOString().slice(0, 10);
+          let todaySuccess = 0, todayFailed = 0, todayRuntimes = [];
 
-          // Monthly archive: on the 1st, archive and reset
-          const day = new Date().getUTCDate();
-          if (day === 1) {
-            const lastMonth = new Date(Date.now() - 86400000)
-              .toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-            const archiveTitle = `Sync Log: ${lastMonth}`;
-            let existing;
-            try {
-              existing = JSON.parse(gh(`issue list --search "${archiveTitle}" --json number`));
-            } catch { existing = []; }
-            if (!existing.length) {
-              ghWithBody(`issue create --title ${JSON.stringify(archiveTitle)} --label "${LABEL}"`, body);
-              setCounter('Successful syncs (this month)', 0);
-              setCounter('Failed syncs (this month)', 0);
-              // Clear failure rows
-              const lines = body.split('\n');
-              let inTable = false;
-              body = lines.filter(line => {
-                if (line.startsWith('|---')) { inTable = true; return true; }
-                if (inTable && line.startsWith('|')) return false;
-                if (inTable && !line.startsWith('|')) inTable = false;
-                return true;
-              }).join('\n');
+          let page = 1;
+          while (true) {
+            const comments = JSON.parse(gh(
+              `api repos/{owner}/{repo}/issues/${logIssueNum}/comments --per-page 100 --paginate -q '[.[] | {body, created_at}]'`
+            ).replace(/\]\[/g, ','));
+            for (const c of comments) {
+              if (!c.created_at.startsWith(todayStr)) continue;
+              const m = c.body.match(/```json\n(.*?)\n```/s);
+              if (!m) continue;
+              try {
+                const data = JSON.parse(m[1]);
+                if (data.result === 'success') todaySuccess++;
+                else todayFailed++;
+                if (data.runtime_s) todayRuntimes.push(data.runtime_s);
+              } catch {}
             }
+            break;
           }
 
-          ghWithBody(`issue edit ${issueNum}`, body);
-          console.log(`Updated issue #${issueNum}: synced=${synced}, successes=${successCount}, failures=${failCount}`);
+          const avgRuntime = todayRuntimes.length
+            ? Math.round(todayRuntimes.reduce((a, b) => a + b, 0) / todayRuntimes.length)
+            : 0;
+          const todayLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+          const dashBody = [
+            '## Sync Status',
+            '',
+            `**Last sync:** ${ts} UTC (${icon} ${resultWord})`,
+            `**Server:** ${server}`,
+            '',
+            `### Today (${todayLabel})`,
+            `${todaySuccess} success, ${todayFailed} failed | Avg runtime: ${avgRuntime}s`,
+            '',
+            '_Past 30 days and monthly history are updated daily by the rollup job._',
+          ].join('\n');
+
+          if (!dashIssueNum) {
+            try { gh(`label create "${DASH_LABEL}" --description "Sync dashboard" --color 0e8a16`); } catch {}
+            const url = ghWithBody(`issue create --title "Sync Status" --label "${DASH_LABEL}"`, dashBody);
+            dashIssueNum = parseInt(url.split('/').pop());
+            try { gh(`issue pin ${dashIssueNum}`); } catch {}
+          } else {
+            // Preserve rollup sections if they exist
+            const existing = JSON.parse(gh(`issue view ${dashIssueNum} --json body`)).body;
+            const rollupMarker = '### Past 30 Days';
+            const rollupIdx = existing.indexOf(rollupMarker);
+            const finalBody = rollupIdx >= 0
+              ? dashBody.replace(
+                  '_Past 30 days and monthly history are updated daily by the rollup job._',
+                  existing.slice(rollupIdx)
+                )
+              : dashBody;
+            ghWithBody(`issue edit ${dashIssueNum}`, finalBody);
+          }
+
+          console.log(`Updated dashboard #${dashIssueNum}: today=${todaySuccess}/${todaySuccess + todayFailed}`);
           SCRIPT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SYNCED: ${{ steps.sync.outputs.synced }}
           SERVER: ${{ steps.sync.outputs.sync_host }}
           REACHABLE: ${{ steps.sync.outputs.server_reachable }}
+          RUNTIME: ${{ steps.sync.outputs.runtime_s }}
