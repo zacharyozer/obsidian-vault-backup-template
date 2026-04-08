@@ -64,6 +64,7 @@ jobs:
 
           const LOG_LABEL = 'sync-log';
           const DASH_LABEL = 'sync-dashboard';
+          const REPO = process.env.GITHUB_REPOSITORY;
 
           // Find dashboard issue
           let dashIssueNum;
@@ -86,9 +87,10 @@ jobs:
           const allRuns = [];
 
           for (const issue of logIssues) {
-            const comments = JSON.parse(gh(
-              `api repos/{owner}/{repo}/issues/${issue.number}/comments --per-page 100 --paginate -q '[.[] | {body, created_at}]'`
-            ).replace(/\]\[/g, ','));
+            const commentsRaw = gh(
+              `api repos/${REPO}/issues/${issue.number}/comments --per-page 100 --paginate`
+            );
+            const comments = JSON.parse(commentsRaw.replace(/\]\[/g, ',') || '[]');
 
             for (const c of comments) {
               const m = c.body.match(/```json\n(.*?)\n```/s);

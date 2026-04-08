@@ -152,6 +152,7 @@ jobs:
 
           const LOG_LABEL = 'sync-log';
           const DASH_LABEL = 'sync-dashboard';
+          const REPO = process.env.GITHUB_REPOSITORY;
           const now = new Date();
           const ts = now.toISOString().slice(0, 16).replace('T', ' ');
           const synced = process.env.SYNCED === 'true';
@@ -211,23 +212,20 @@ jobs:
           const todayStr = now.toISOString().slice(0, 10);
           let todaySuccess = 0, todayFailed = 0, todayRuntimes = [];
 
-          let page = 1;
-          while (true) {
-            const comments = JSON.parse(gh(
-              `api repos/{owner}/{repo}/issues/${logIssueNum}/comments --per-page 100 --paginate -q '[.[] | {body, created_at}]'`
-            ).replace(/\]\[/g, ','));
-            for (const c of comments) {
-              if (!c.created_at.startsWith(todayStr)) continue;
-              const m = c.body.match(/```json\n(.*?)\n```/s);
-              if (!m) continue;
-              try {
-                const data = JSON.parse(m[1]);
-                if (data.result === 'success') todaySuccess++;
-                else todayFailed++;
-                if (data.runtime_s) todayRuntimes.push(data.runtime_s);
-              } catch {}
-            }
-            break;
+          const commentsRaw = gh(
+            `api repos/${REPO}/issues/${logIssueNum}/comments --per-page 100 --paginate`
+          );
+          const comments = JSON.parse(commentsRaw.replace(/\]\[/g, ',') || '[]');
+          for (const c of comments) {
+            if (!c.created_at.startsWith(todayStr)) continue;
+            const m = c.body.match(/```json\n(.*?)\n```/s);
+            if (!m) continue;
+            try {
+              const data = JSON.parse(m[1]);
+              if (data.result === 'success') todaySuccess++;
+              else todayFailed++;
+              if (data.runtime_s) todayRuntimes.push(data.runtime_s);
+            } catch {}
           }
 
           const avgRuntime = todayRuntimes.length
