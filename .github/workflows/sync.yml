@@ -18,6 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
@@ -147,10 +151,8 @@ jobs:
       - name: Log sync result and update dashboard
         if: always()
         run: |
-          RUNTIME=${{ steps.sync.outputs.runtime_s }}
-          # Use job-level elapsed time if available (more accurate for billing)
-          JOB_RUNTIME=${SECONDS:-$RUNTIME}
-          RUNTIME=$JOB_RUNTIME node .github/scripts/sync-dashboard.js
+          RUNTIME=$(( $(date +%s) - ${{ steps.timer.outputs.start }} ))
+          RUNTIME=$RUNTIME node .github/scripts/sync-dashboard.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TZ_DISPLAY: ${{ env.TZ_DISPLAY }}
