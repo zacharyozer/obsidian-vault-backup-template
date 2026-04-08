@@ -97,6 +97,14 @@ jobs:
           # ob sync hangs indefinitely when the server is unresponsive or
           # another client holds the connection. The -k 10 flag sends SIGKILL
           # 10s after SIGTERM, since ob catches SIGTERM but doesn't always exit.
+          # Set FORCE_SYNC_FAILURE repo variable to "true" to simulate a failure
+          if [ "${{ vars.FORCE_SYNC_FAILURE }}" = "true" ]; then
+            echo "::warning::FORCE_SYNC_FAILURE is set — simulating sync failure"
+            echo "synced=false" >> "$GITHUB_OUTPUT"
+            echo "runtime_s=$((SECONDS - START_SECONDS))" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           MAX_ATTEMPTS=2
           for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
             echo "Sync attempt $attempt/$MAX_ATTEMPTS..."
