@@ -82,6 +82,25 @@ The full flow is encoded in two Claude Code skills:
 - **`/test-changes`** — Smoke test: trigger both workflows and verify
   they pass. Usable standalone or as part of `/deploy-changes`.
 
+## Pulling template updates
+
+If the template improves after you've created your backup repo, you can pull changes:
+
+```bash
+# One-time: add the template as a remote
+git remote add template https://github.com/zacharyozer/obsidian-vault-backup-template.git
+
+# When you want to pull updates (git-crypt must be locked):
+git-crypt lock          # if currently unlocked
+git fetch template
+git merge template/main
+git push
+git-crypt unlock        # if you want to browse vault files locally
+```
+
+**Important:** git-crypt must be locked during merge. Phantom diffs from the
+git-crypt filter break `git merge`'s internal stash when unlocked.
+
 ## How to contribute
 
 - Develop in the dev repo, port to template when it works.

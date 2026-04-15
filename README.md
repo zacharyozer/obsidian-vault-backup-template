@@ -1,6 +1,73 @@
 # obsidian-vault-backup-template
 
-This template gives your Obsidian vault permanent, encrypted version history in GitHub. It uses [obsidian-headless](https://github.com/obsidianmd/obsidian-headless) to pull your vault via Obsidian Sync, encrypts everything at rest with git-crypt, and commits a snapshot to GitHub every hour via GitHub Actions — so you get a full, browsable history of every change you've ever made.
+Encrypted, versioned backups of your Obsidian vault — powered by GitHub Actions.
+
+<!-- TODO: Add hero image here -->
+
+## Quick start
+
+1. Click **[Use this template](../../generate)** to create a private repo.
+2. Run `/setup` in [Claude Code](https://claude.ai/claude-code) for guided configuration — or follow [`.claude/commands/setup.md`](.claude/commands/setup.md) manually.
+3. The hourly sync starts automatically.
+
+## Why this exists
+
+Obsidian Sync keeps your notes in sync across devices. But it doesn't give you version history, a backup you control, or a way to recover a note you deleted three months ago.
+
+This template fixes that. Every hour, it pulls your vault from Obsidian Sync, encrypts it with git-crypt, and commits the snapshot to GitHub. You get full git history of every change to every note — encrypted at rest, on infrastructure you own.
+
+## What you get
+
+- **Hourly snapshots** of your entire vault, committed automatically
+- **Full git history** — diff any note at any point in time
+- **Encrypted at rest** via git-crypt (even in a private repo, notes deserve encryption)
+- **Staleness alerts** — daily health check opens a GitHub Issue if sync hasn't run in 48 hours
+- **Pull-only** — the backup never writes to your vault, so it can't corrupt your notes
+
+## Cost
+
+| Component | Cost |
+|-----------|------|
+| Obsidian Sync (Standard) | $4/mo |
+| GitHub Actions | Free (well within the free tier) |
+| GitHub private repo | Free |
+
+## How it works
+
+Two GitHub Actions workflows handle everything:
+
+**Hourly sync** (`sync.yml`): Authenticates with Obsidian Sync (auth token, or password+TOTP fallback), unlocks git-crypt, pulls the vault via [obsidian-headless](https://github.com/obsidianmd/obsidian-headless), and commits any changes.
+
+**Daily health check** (`staleness-check.yml`): Verifies the last successful sync happened within 48 hours and the repo stays under 50MB. Errors trigger GitHub notifications.
+
+```mermaid
+flowchart LR
+    subgraph Obsidian Sync
+        A[Your vault]
+    end
+    subgraph GitHub Actions
+        B[obsidian-headless<br/>pull-only] --> C[git-crypt<br/>encrypt]
+    end
+    subgraph Your GitHub repo
+        D[Encrypted<br/>commit history]
+    end
+    A -->|hourly| B
+    C --> D
+    E[staleness-check] -->|daily| D
+```
+
+## Design decisions
+
+- **GitHub Actions, not a VPS.** No infrastructure to maintain. Runs on the free tier.
+- **git-crypt for encryption.** Transparent encrypt-on-commit, decrypt-on-checkout. Your notes stay encrypted on GitHub's servers.
+- **Token-first auth with TOTP fallback.** Self-healing — no manual intervention when tokens expire.
+- **Pull-only mode.** The headless client never pushes to Obsidian Sync, so it can't overwrite your notes with stale data.
+- **Notes only, no plugins.** Plugin files add noise without meaningful version history value.
+
+<!-- TODO: Add screenshots
+- Commit history showing vault snapshots
+- Staleness-check GitHub Issue
+-->
 
 ## Prerequisites
 
@@ -9,36 +76,10 @@ This template gives your Obsidian vault permanent, encrypted version history in 
 - [`git-crypt`](https://github.com/AGWA/git-crypt) installed locally
 - [`gh`](https://cli.github.com) CLI installed locally
 
-## Quick start
+## Contributing
 
-1. Click **Use this template** on GitHub to create your repo.
-2. Run `/setup` in [Claude Code](https://claude.ai/claude-code) for guided setup.
-   Or follow the instructions manually in [`.claude/commands/setup.md`](.claude/commands/setup.md).
-3. Set the 7 required GitHub secrets.
-4. Done. The hourly sync starts automatically.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details, the three-repo development model, and how to test changes.
 
-## Cost
+## License
 
-- Obsidian Sync Standard: $4/mo
-- GitHub Actions: free (well within the free tier for hourly commits)
-
-## Pulling template updates
-
-If the template improves, you can pull changes into your backup repo:
-
-```bash
-# One-time: add the template as a remote
-git remote add template https://github.com/<owner>/obsidian-vault-backup-template.git
-
-# When you want to pull updates (git-crypt must be locked):
-git-crypt lock          # if currently unlocked
-git fetch template
-git merge template/main
-git push
-git-crypt unlock        # if you want to browse vault files locally
-```
-
-## Documentation
-
-- [`.claude/commands/setup.md`](.claude/commands/setup.md) — guided setup (invocable as `/setup` in Claude Code)
-- [CONTRIBUTING.md](CONTRIBUTING.md) — architecture overview and developer docs
+[MIT](LICENSE)
