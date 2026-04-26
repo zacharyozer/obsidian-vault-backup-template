@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+vault/.obsidian/workspace.json
+vault/.obsidian/workspace-mobile.json
+vault/.smart-env/
+vault/.trash/
