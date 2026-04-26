@@ -121,15 +121,20 @@ git remote add template https://github.com/zacharyozer/obsidian-vault-backup-tem
 
 # When you want to pull updates:
 git checkout main
-git fetch template
-git merge template/main
+git pull --ff-only template main
 git push
 ```
 
 Pulling only flows into `main`. The `vault` branch is yours and never
 receives template changes — it's the encrypted snapshot history of your
-vault. Because `main` has no encrypted files, the old git-crypt
-lock-before-merge dance is no longer needed.
+vault.
+
+`--ff-only` enforces linear history. If the pull fails because your
+local `main` has diverged from template, that's a bug — your `main`
+should be a strict mirror. Reset with `git fetch template && git reset
+--hard template/main && git push --force origin main`. The git-crypt
+lock-before-merge dance from older versions is no longer needed because
+`main` has no encrypted files.
 
 ## How to contribute
 

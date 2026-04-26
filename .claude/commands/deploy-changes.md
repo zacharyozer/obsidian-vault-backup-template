@@ -60,51 +60,53 @@ Commit and push to the template repo's `main` branch.
 
 ---
 
-## 5. QA: merge template into dev
+## 5. QA: fast-forward template into dev
 
 ```bash
 cd <dev-repo>
-git fetch template
-git merge template/main --no-edit
+git checkout main
+git pull --ff-only template main
 git push origin main
 ```
 
-This should be a normal merge (no `--allow-unrelated-histories`).
+`--ff-only` enforces linear history. If the pull fails because dev's
+`main` has diverged from template, that's a bug — dev's `main` should
+be a strict mirror. Reset with `git fetch template && git reset --hard
+template/main && git push --force origin main`.
 
 Then run `/test-changes` to verify both workflows pass.
 
-If anything fails, fix in the dev repo and repeat from step 1.
+If anything fails, fix on template's `main` and repeat from step 1.
 
 ---
 
-## 6. Ship: merge template into production
+## 6. Ship: fast-forward template into production
 
 ```bash
 cd <production-repo>
-# git-crypt must be locked before merging (see decisions.md)
-git fetch template
-git checkout -b <pr-branch> || git checkout <pr-branch>
-git merge template/main --no-edit
-git push origin <pr-branch>
+git checkout main
+git pull --ff-only template main
+git push origin main
 ```
 
-If a PR already exists, the push updates it. If not, create one:
+Same `--ff-only` rule applies — production's `main` is a strict mirror
+of template's `main`. No PR needed; the parity rule means the change
+on template is already reviewed-and-shipped by the time you're here.
+
+If `--ff-only` fails (production has diverged), reset:
 
 ```bash
-gh pr create --title "Pull template: <description>" \
-  --body "Pulls latest changes from template." \
-  --head <pr-branch> --base main --draft
+git fetch template
+git reset --hard template/main
+git push --force origin main
 ```
-
-**Stop here.** The user reviews and merges the production PR themselves.
 
 ---
 
-## 7. Post-merge verification (user-driven)
+## 7. Post-deploy verification
 
-After the user merges the production PR, run `/test-changes` on
-production to verify both workflows pass. The first sync run after
-merging bootstraps the `last-sync` tag.
+Run `/test-changes` on production to verify both workflows pass. The
+first sync run after the fast-forward bootstraps the `last-sync` tag.
 
 ---
 
@@ -114,10 +116,20 @@ For changes isolated to non-sync code. Trades end-to-end sync coverage
 for speed. **Only use when the change cannot break sync, auth, or
 git-crypt.**
 
-### 1. Test locally on production data
+The parity rule (see template's CLAUDE.md) means changes always land
+on **template first**. Production and dev pull via fast-forward. The
+"express" part: skip the dev QA step that requires a working dev vault.
 
-Run the changed script directly against the production repo. For the
-dashboard script:
+### 1. Edit on template
+
+Make the change on `template/main`. Apply the rules in
+`~/.claude/rules/public-repo-content.md` to scrub PII before commit
+(`main` is public).
+
+### 2. Test locally on production data (if helpful)
+
+For scripts that read production state, run them directly against the
+production repo before pushing template:
 
 ```bash
 GITHUB_REPOSITORY=<owner>/<production-repo> \
@@ -125,48 +137,38 @@ GITHUB_REPOSITORY=<owner>/<production-repo> \
   node .github/scripts/sync-dashboard.js
 ```
 
-This rebuilds the dashboard issue body from the same data the workflow
-would see. Read-only against issues except for the dashboard issue
-itself, which gets re-edited (idempotent — same input → same output).
+Read-only checks are safe; idempotent re-renders (like the dashboard
+issue body) are also fine.
 
-### 2. Commit and push to production main
-
-Commit on the working branch, then fast-forward `main`:
+### 3. Push template
 
 ```bash
-git push -u origin <branch>
-git checkout main
-git merge --ff-only <branch>
+cd <template-repo>
 git push origin main
 ```
 
-Solo dev: no PR review step. The commit goes straight to `main`.
+### 4. Fast-forward production and dev
 
-### 3. Manually trigger and verify
+```bash
+cd <production-repo> && git checkout main && git pull --ff-only template main && git push origin main
+cd <dev-repo>        && git checkout main && git pull --ff-only template main && git push origin main
+```
+
+If `--ff-only` fails on either, that downstream main has diverged —
+reset it: `git fetch template && git reset --hard template/main &&
+git push --force origin main`.
+
+### 5. Trigger and verify on production
 
 ```bash
 gh workflow run sync.yml --repo <production-repo>
 gh run watch <run-id> --exit-status --repo <production-repo>
 ```
 
-Watch the failing step specifically. Green run = fix verified.
+Watch the affected step specifically. Green run = fix verified.
 
-### 4. Cherry-pick to template and dev
+### 6. Document
 
-Keep all three repos in lockstep so future template merges don't
-regress production:
-
-```bash
-# Apply the same diff in template/ and dev/, commit with same message
-cd <template-repo> && git add -A && git commit -m "<same message>" && git push origin main
-cd <dev-repo>      && git add -A && git commit -m "<same message>" && git push origin main
-```
-
-Dev gets the patch even though its workflow doesn't run — this is
-hygiene so a future revived dev vault inherits the current state.
-
-### 5. Document
-
-Add a build log entry under `docs/logs/YYYY-MM-DD-<description>.md`
-covering the problem, investigation, and the express path you used
-(including why the dev step was skipped).
+Add a build log entry to `docs/logs/YYYY-MM-DD-<description>.md` on
+**template's main** (it propagates to prod and dev via the parity rule).
+Scrub PII per `~/.claude/rules/public-repo-content.md`.

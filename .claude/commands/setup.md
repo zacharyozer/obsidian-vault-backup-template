@@ -257,10 +257,19 @@ and never receives template changes):
 
 ```bash
 git checkout main
-git fetch template
-git merge template/main
+git pull --ff-only template main
 git push
 ```
 
+`--ff-only` enforces linear history. Your `main` should be a strict
+mirror of `template/main`, so the pull should always fast-forward. If
+it doesn't, your `main` has diverged — reset with:
+
+```bash
+git fetch template
+git reset --hard template/main
+git push --force origin main
+```
+
 Because `main` has no encrypted files, the old git-crypt lock-before-merge
-dance is no longer needed. Clean merges every time.
+dance is no longer needed.
