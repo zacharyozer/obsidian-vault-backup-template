@@ -16,7 +16,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 
-const gh = (cmd) => execSync(`gh ${cmd}`, { encoding: 'utf8' }).trim();
+const gh = (cmd) => execSync(`gh ${cmd}`, { encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 }).trim();
 const ghWithBody = (cmd, body) => {
   fs.writeFileSync('/tmp/issue-body.md', body);
   return gh(`${cmd} --body-file /tmp/issue-body.md`);
@@ -102,10 +102,10 @@ function loadAllRuns() {
 
   const allRuns = [];
   for (const issue of logIssues) {
-    const raw = gh(`api repos/${REPO}/issues/${issue.number}/comments?per_page=100 --paginate`);
-    const comments = JSON.parse(raw.replace(/\]\[/g, ',') || '[]');
-    for (const c of comments) {
-      const m = c.body.match(/```json\n(.*?)\n```/s);
+    const raw = gh(`api repos/${REPO}/issues/${issue.number}/comments?per_page=100 --paginate --jq '[.[] | .body]'`);
+    const bodies = JSON.parse(raw.replace(/\]\s*\[/g, ',') || '[]');
+    for (const body of bodies) {
+      const m = body.match(/```json\n(.*?)\n```/s);
       if (!m) continue;
       try { allRuns.push(JSON.parse(m[1])); } catch {}
     }
