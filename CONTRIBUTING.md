@@ -63,6 +63,18 @@ into independent pieces and there's a clear reason to separate them.
 Doc changes that don't affect workflows can go straight to template,
 then flow through QA and production.
 
+### Express path (non-sync code, no dev vault)
+
+If the change is **isolated to non-sync code** (dashboard rendering,
+log scripts, health-check tweaks — anything that doesn't touch auth,
+`ob sync`, git-crypt, or workflow credentials) and the dev vault isn't
+available, `/deploy-changes` describes an express path: test locally
+against production data, push to prod `main`, manually trigger the
+workflow to verify, then cherry-pick to template and dev for parity.
+
+Use this only when the change cannot break sync. For sync-touching
+changes, the dev vault must exist — revive it first.
+
 ## How to test changes
 
 You need an Obsidian Sync subscription to test end-to-end.

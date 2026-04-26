@@ -7,6 +7,20 @@ See CONTRIBUTING.md for the three-repo model and design rationale.
 
 ---
 
+## When to use the express path instead
+
+The full path requires a working dev vault for end-to-end sync testing.
+If the change is **isolated to non-sync code** — dashboard rendering,
+log scripts, health-check tweaks, docs, anything that doesn't touch
+auth, `ob sync`, git-crypt, or the workflow YAML's credential handling —
+skip to the [Express path](#express-path-no-dev-vault-needed) at the
+bottom.
+
+If the change touches sync, auth, or credentials, the dev vault must
+exist. Revive it first or postpone the change.
+
+---
+
 ## 1. Develop in dev repo
 
 Make changes in the dev repo (`obsidian-vault-backup-dev`). This repo
@@ -91,3 +105,68 @@ gh pr create --title "Pull template: <description>" \
 After the user merges the production PR, run `/test-changes` on
 production to verify both workflows pass. The first sync run after
 merging bootstraps the `last-sync` tag.
+
+---
+
+## Express path (no dev vault needed)
+
+For changes isolated to non-sync code. Trades end-to-end sync coverage
+for speed. **Only use when the change cannot break sync, auth, or
+git-crypt.**
+
+### 1. Test locally on production data
+
+Run the changed script directly against the production repo. For the
+dashboard script:
+
+```bash
+GITHUB_REPOSITORY=<owner>/<production-repo> \
+  TZ_DISPLAY=America/New_York \
+  node .github/scripts/sync-dashboard.js
+```
+
+This rebuilds the dashboard issue body from the same data the workflow
+would see. Read-only against issues except for the dashboard issue
+itself, which gets re-edited (idempotent — same input → same output).
+
+### 2. Commit and push to production main
+
+Commit on the working branch, then fast-forward `main`:
+
+```bash
+git push -u origin <branch>
+git checkout main
+git merge --ff-only <branch>
+git push origin main
+```
+
+Solo dev: no PR review step. The commit goes straight to `main`.
+
+### 3. Manually trigger and verify
+
+```bash
+gh workflow run sync.yml --repo <production-repo>
+gh run watch <run-id> --exit-status --repo <production-repo>
+```
+
+Watch the failing step specifically. Green run = fix verified.
+
+### 4. Cherry-pick to template and dev
+
+Keep all three repos in lockstep so future template merges don't
+regress production:
+
+```bash
+# Apply the same diff in template/ and dev/, commit with same message
+cd <template-repo> && git add -A && git commit -m "<same message>" && git push origin main
+cd <dev-repo>      && git add -A && git commit -m "<same message>" && git push origin main
+```
+
+Dev gets the patch even though its workflow doesn't run — this is
+hygiene so a future revived dev vault inherits the current state.
+
+### 5. Document
+
+Add a build log entry under `docs/logs/YYYY-MM-DD-<description>.md`
+covering the problem, investigation, and the express path you used
+(including why the dev step was skipped).
