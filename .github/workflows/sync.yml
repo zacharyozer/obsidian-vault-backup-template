@@ -23,6 +23,17 @@ jobs:
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          fetch-tags: true
+
+      - name: Add vault branch as worktree
+        run: |
+          git fetch origin vault:vault
+          git worktree add ./vault-data vault
+
+      - name: Verify git-crypt config in vault worktree
+        run: grep -q git-crypt ./vault-data/.gitattributes
 
       - uses: actions/setup-node@v6
         with:
@@ -62,6 +73,7 @@ jobs:
           fi
 
       - name: Unlock git-crypt
+        working-directory: ./vault-data
         run: |
           echo "${{ secrets.GIT_CRYPT_KEY }}" | base64 -d > /tmp/git-crypt-key.bin
           git-crypt unlock /tmp/git-crypt-key.bin
@@ -69,6 +81,7 @@ jobs:
 
       - name: Setup and sync vault
         id: sync
+        working-directory: ./vault-data
         run: |
           ob sync-setup \
             --vault "${{ secrets.OBSIDIAN_VAULT_NAME }}" \
@@ -128,6 +141,7 @@ jobs:
 
       - name: Commit changes
         if: steps.sync.outputs.synced == 'true'
+        working-directory: ./vault-data
         run: |
           git config user.name "obsidian-backup"
           git config user.email "obsidian-backup@users.noreply.github.com"
@@ -136,11 +150,12 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "vault snapshot $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            git push origin HEAD:vault
           fi
 
       - name: Record successful sync
         if: steps.sync.outputs.synced == 'true'
+        working-directory: ./vault-data
         run: |
           # SAFETY: The + prefix force-updates ONLY this tag ref.
           # It cannot affect branches. Do not change this to --force
