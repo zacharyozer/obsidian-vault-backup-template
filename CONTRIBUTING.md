@@ -2,15 +2,32 @@
 
 ## Architecture
 
+### Two-branch repo structure
+
+Every repo built from this template has two long-lived branches:
+
+| Branch | Contents |
+|--------|----------|
+| `main` | Code only — workflows, scripts, docs. Mirrors the template. Never has `vault/`. |
+| `vault` | Encrypted vault snapshots + `.gitattributes` + `.gitignore`. Updated by the sync workflow. |
+
+The split keeps code parity across template and forks: `git merge
+template/main` is always conflict-free because `vault/` is never on `main`.
+Vault history stays intact on the `vault` branch.
+
+### Workflows
+
 Two GitHub Actions workflows handle everything.
 
 **`sync.yml`** runs every hour:
 
-1. Authenticates with Obsidian Sync (auth token, or password+TOTP as a fallback)
-2. Unlocks the repo with git-crypt
-3. Pulls the vault via `ob sync` from `obsidian-headless`
-4. Commits and pushes any changed files
-5. Force-updates an annotated `last-sync` tag to record the successful sync
+1. Checks out `main` (gets scripts/code, no `vault/`)
+2. Adds the `vault` branch as a worktree at `./vault-data`
+3. Authenticates with Obsidian Sync (auth token, or password+TOTP fallback)
+4. Unlocks git-crypt in the worktree
+5. Pulls the vault via `ob sync` from `obsidian-headless`
+6. Commits to the `vault` branch and pushes
+7. Force-updates an annotated `last-sync` tag (pointing at the new vault commit)
 
 **`staleness-check.yml`** runs daily at 9am UTC:
 
@@ -102,16 +119,17 @@ If the template improves after you've created your backup repo, you can pull cha
 # One-time: add the template as a remote
 git remote add template https://github.com/zacharyozer/obsidian-vault-backup-template.git
 
-# When you want to pull updates (git-crypt must be locked):
-git-crypt lock          # if currently unlocked
+# When you want to pull updates:
+git checkout main
 git fetch template
 git merge template/main
 git push
-git-crypt unlock        # if you want to browse vault files locally
 ```
 
-**Important:** git-crypt must be locked during merge. Phantom diffs from the
-git-crypt filter break `git merge`'s internal stash when unlocked.
+Pulling only flows into `main`. The `vault` branch is yours and never
+receives template changes — it's the encrypted snapshot history of your
+vault. Because `main` has no encrypted files, the old git-crypt
+lock-before-merge dance is no longer needed.
 
 ## How to contribute
 

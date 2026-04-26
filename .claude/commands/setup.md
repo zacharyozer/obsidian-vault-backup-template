@@ -144,6 +144,24 @@ user to back up this value in a password manager.
 The `.gitattributes` file is already configured to encrypt `vault/**`. No
 manual git-crypt filter setup is needed.
 
+### Two-branch structure (already set up by the template)
+
+The repo has two long-lived branches — both inherited automatically from
+the template:
+
+- **`main`** — code only (workflows, scripts, docs). Never has `vault/`.
+- **`vault`** — encrypted vault snapshots. The sync workflow checks
+  this out as a worktree (`./vault-data`) and writes into it. The
+  `last-sync` tag points here.
+
+You don't need to create either branch manually. Just confirm both
+exist on the new repo:
+
+```bash
+git branch -r
+# should list:  origin/main, origin/vault
+```
+
 ---
 
 ## 4. Configure GitHub secrets
@@ -182,7 +200,14 @@ gh workflow run sync.yml
 gh run watch --exit-status
 ```
 
-After the run completes, verify files appear in `vault/` on GitHub.
+After the run completes, verify a fresh `vault snapshot ...` commit
+appears on the **`vault` branch** (not `main`):
+
+```bash
+gh api repos/<owner>/<repo>/commits?sha=vault --jq '.[0].commit.message'
+```
+
+The `last-sync` tag should point at that new commit.
 
 If it fails:
 
@@ -227,13 +252,15 @@ One-time -- add the template as a remote:
 git remote add template https://github.com/<owner>/obsidian-vault-backup-template.git
 ```
 
-To pull updates (git-crypt must be **locked** — phantom diffs from the
-git-crypt filter break `git merge`'s internal stash when unlocked):
+To pull updates (only flows into `main`; the `vault` branch is yours
+and never receives template changes):
 
 ```bash
-git-crypt lock                     # if currently unlocked
+git checkout main
 git fetch template
 git merge template/main
 git push
-git-crypt unlock /path/to/key.bin  # if you want to browse vault files locally
 ```
+
+Because `main` has no encrypted files, the old git-crypt lock-before-merge
+dance is no longer needed. Clean merges every time.

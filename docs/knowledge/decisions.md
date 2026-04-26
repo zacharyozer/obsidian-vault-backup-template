@@ -158,6 +158,61 @@ server-side guard, but requires GitHub Pro for private repos. Without
 Pro, the refspec scoping is the only safeguard. Worth enabling if you
 upgrade.
 
+## Vault data on a dedicated `vault` branch
+
+Each repo has two long-lived branches:
+
+| Branch | Contents |
+|--------|----------|
+| `main` | Code only — `.github/`, `docs/`, `.gitattributes`, `.gitignore`, README, CONTRIBUTING, AGENTS. Never has `vault/`. |
+| `vault` | `vault/` + `.gitattributes` + `.gitignore`. Encrypted snapshot history. |
+
+The sync workflow checks out `main` as the primary tree (so scripts and
+config come from `main`), then adds the `vault` branch as a git
+**worktree** at `./vault-data` and runs `ob sync` against
+`./vault-data/vault`. Commits, tags, and pushes target the `vault`
+branch directly.
+
+**Why split branches:**
+
+- Multiple downstream forks share the same code (template → personal
+  vaults). Without the split, every `git merge template/main` had to
+  reconcile interleaved encrypted vault snapshots vs. unrelated code
+  changes — painful.
+- Code changes can flow cleanly between forks because `main` is now
+  literally identical across template, dev, and personal vault repos
+  (modulo intentional user customizations).
+- Vault history stays intact — full snapshot timeline preserved on the
+  `vault` branch, never lost.
+
+**Why a worktree (not a merge-based shared-history branch):**
+
+The alternative was a `vault` branch that always merged from `main` to
+keep code current. Rejected because:
+- Worktree gives genuinely clean separation — main never has `vault/`
+  on disk or in any commit.
+- Removes the "merge main into vault on every run" plumbing.
+- One extra step (`git worktree add`) is cheaper than a recurring merge.
+
+**Why not an orphan `vault` branch with no shared history:**
+
+History was preserved through a single `git filter-repo` pass that
+kept only `vault/`, `.gitattributes`, and `.gitignore` paths. The
+resulting `vault` branch shares the original SHAs' content but has new
+commit IDs. An orphan branch would have erased all of that.
+
+**`last-sync` tag** points at the latest `vault` commit, not main.
+`staleness-check.yml` reads the tag's tagger date — branch-agnostic,
+no changes needed.
+
+**Bootstrapping a new fork:** the template ships with a minimal `vault`
+branch (`.gitattributes`, `.gitignore`, empty `vault/.gitkeep`). Forks
+inherit it automatically. The first sync run populates `vault/` with
+real snapshots. See `.claude/commands/setup.md`.
+
+**Trade-off:** sync.yml is ~17 lines longer. Worth it for the
+structural enforcement of the parity rule.
+
 ## Open questions
 
 ### Still observing
